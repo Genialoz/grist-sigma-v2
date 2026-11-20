@@ -12,22 +12,9 @@ async function refresh(){
  }catch(e){message('Erreur Grist : '+e.message,true);}}
 
 function renderAccess(){
- const list=$('access-list'),summary=$('access-summary');if(!list||!summary){message('Interface habilitations incomplète : mettre à jour les fichiers du widget.',true);return;}
- list.replaceChildren();summary.replaceChildren();const now=Date.now()/1000, data=state.access;
- const counts=A.summarize(data,now);text(summary,`Utilisateurs : ${counts.users??'indisponible'} · Habilitations : ${counts.habilitations??'indisponible'} · Actives à ce jour : ${counts.active??'indisponible'}`);
- const issues=A.validate(data,state.records,now);const make=(parent,tag,s,cls)=>{const el=document.createElement(tag);if(cls)el.className=cls;text(el,s);parent.appendChild(el);return el;};
- const note=make(list,'div','Référentiel de préparation seulement : ni ces données ni les boutons du widget ne constituent un contrôle ACL.','access-note');
- const panels=[['Profils officiels','profils'],['Utilisateurs','utilisateurs'],['Affectations et habilitations','habilitations']];
- for(const [label,key] of panels){const section=document.createElement('section');section.className='access-block';make(section,'h3',label);const entries=data[key];if(!Array.isArray(entries)){make(section,'p','Table absente ou inaccessible. Importer le CSV correspondant dans SIGMA V2-TEST.');list.appendChild(section);continue;}
- if(!entries.length)make(section,'p','Aucun enregistrement.');
- for(const r of entries.slice(0,250)){let content='';if(key==='profils')content=String(r.Code||'')+' — '+String(r.Libelle||'');
- else if(key==='utilisateurs')content=String(r.Email||'')+' — '+String(r.Nom_Affiche||'')+(r.Actif===false?' (inactif)':'');
- else {const u=data.utilisateurs?.find(x=>Number(x.id)===Number(r.Utilisateur));const p=data.profils?.find(x=>Number(x.id)===Number(r.Profil));const c=state.records.cellules?.find(x=>Number(x.id)===Number(r.Cellule));content=(u?.Email||'Utilisateur #'+r.Utilisateur)+' · '+(p?.Code||'Profil #'+r.Profil)+' · '+(c?.Nom||(!r.Cellule?'Périmètre non local':'Cellule #'+r.Cellule))+' · '+(A.validOn(r,now)?'Active':'Non active')+' · '+String(r.Debut||'Date non définie');}
- make(section,'div',content,'access-item');}
- if(entries.length>250)make(section,'p','Affichage limité aux 250 premiers enregistrements.');list.appendChild(section);
- }
- const diag=document.createElement('section');diag.className='access-block';make(diag,'h3','Contrôles des habilitations');if(!issues.length)make(diag,'p','Aucune anomalie détectée dans les lignes accessibles (ne vaut pas validation de sécurité).');
- for(const issue of issues){make(diag,'div',issue.message,'audit-issue '+issue.level);}list.appendChild(diag);
+ const root=$('access-list'), summary=$('access-summary');
+ if(!root||!summary||!window.SigmaAccessUI){message('Fichiers du widget incompatibles : vérifier access-ui.js et index.html.',true);return;}
+ window.SigmaAccessUI.render(root,summary,state.access,state.records);
 }
 
 function renderAudit(){
