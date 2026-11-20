@@ -1,8 +1,8 @@
-/* SIGMA V2.0.5 — Console des habilitations : consultation et simulation locale sans écriture. */
+/* SIGMA V2.0.6 — Console des habilitations : consultation et simulation locale sans écriture. */
 (function(root,factory){const ui=factory(root);if(typeof module==='object'&&module.exports)module.exports=ui;root.SigmaAccessUI=ui;})(typeof window!=='undefined'?window:globalThis,function(root){
 'use strict';
 const A=root.SigmaAccess || (typeof require==='function'?require('./access.js'):null);
-const modes=Object.freeze(['utilisateurs','affectations','profils','diagnostic','simulation']);
+const modes=Object.freeze(['utilisateurs','affectations','profils','diagnostic','simulation','moa']);
 const model={mode:'utilisateurs',search:'',status:'tous',draft:null};
 const node=(tag,cls,txt)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(txt!==undefined)el.textContent=String(txt);return el;};
 const norm=x=>String(x??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -29,8 +29,18 @@ function render(rootEl,summary,records,org){rootEl.replaceChildren();summary.rep
  const counts=A.summarize(records,now);summary.textContent=`${counts.users??'—'} utilisateur(s) · ${counts.habilitations??'—'} habilitation(s) · ${counts.active??'—'} déclarée(s) active(s)`;
  const warning=node('p','access-note','Préparation uniquement — accès complet au document TEST requis par le widget actuel. Les données du référentiel ne constituent pas des droits ACL. Ne pas saisir de données réelles.');rootEl.appendChild(warning);
  const toolbar=node('div','access-toolbar');rootEl.appendChild(toolbar);
- for(const [id,name] of [['utilisateurs','Utilisateurs'],['affectations','Affectations'],['profils','Profils'],['diagnostic','Diagnostics'],['simulation','Simuler une affectation']]){const b=node('button','access-tab'+(model.mode===id?' selected':''),name);b.type='button';b.setAttribute('aria-pressed',String(model.mode===id));b.addEventListener('click',()=>{model.mode=id;render(rootEl,summary,records,org);});toolbar.appendChild(b);}
+ for(const [id,name] of [['utilisateurs','Utilisateurs'],['affectations','Affectations'],['profils','Profils'],['diagnostic','Diagnostics'],['simulation','Simuler une affectation'],['moa','Décisions MOA']]){const b=node('button','access-tab'+(model.mode===id?' selected':''),name);b.type='button';b.setAttribute('aria-pressed',String(model.mode===id));b.addEventListener('click',()=>{model.mode=id;render(rootEl,summary,records,org);});toolbar.appendChild(b);}
  const content=node('div','access-view');rootEl.appendChild(content);
+ if(model.mode==='moa'){
+  const policy=root.SigmaMOA;
+  if(!policy){content.appendChild(node('p','access-note','Module des décisions MOA indisponible. Vérifier moa-rules.js.'));return;}
+  content.appendChild(node('h3',null,'Règles métier communiquées par la MOA'));
+  content.appendChild(node('p','access-note','Synthèse documentaire. Ces règles ne sont PAS appliquées comme habilitations dans cette version et ne remplacent pas les ACL.'));
+  for(const [ref,title,desc] of policy.decisions){const item=node('div','access-card');item.appendChild(node('strong',null,ref+' — '+title));item.appendChild(node('small',null,desc));content.appendChild(item);}
+  content.appendChild(node('h3',null,'Arbitrages nécessaires avant l’ouverture des accès sensibles'));
+  for(const [priority,ref,desc] of policy.pending){const item=node('div','audit-issue attention');item.textContent=priority+' · '+ref+' — '+desc;content.appendChild(item);}
+  return;
+ }
  if(model.mode==='simulation')return renderSimulation(content,rootEl,summary,records,org);
  if(model.mode==='diagnostic'){const issues=A.validate(records,org,now);const h=node('h3',null,`Anomalies détectées (${issues.length})`);content.appendChild(h);if(!issues.length)content.appendChild(node('p','muted','Aucune anomalie détectée sur les enregistrements accessibles. Ce résultat ne vaut pas audit de sécurité.'));for(const issue of issues)content.appendChild(node('div','audit-issue '+issue.level,issue.message));return;}
  const controls=node('div','access-filters');content.appendChild(controls);const search=node('input');search.type='search';search.placeholder='Rechercher dans cette rubrique';search.setAttribute('aria-label','Rechercher');search.value=model.search;controls.appendChild(search);
