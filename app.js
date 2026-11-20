@@ -12,14 +12,22 @@ async function refresh(){
  }catch(e){message('Erreur Grist : '+e.message,true);}}
 function renderAudit(){
  const issues=C.audit(state.records);
- const summary=$('audit-summary'),list=$('audit-list');summary.replaceChildren();list.replaceChildren();
+ const summary=$('audit-summary'),list=$('audit-list');
+ if(!summary||!list){message('Éléments du contrôle de cohérence absents : mettre à jour index.html.',true);return;}
+ summary.replaceChildren();list.replaceChildren();
  const totals={erreur:0,attention:0,indisponible:0};issues.forEach(x=>totals[x.level]++);
  text(summary,`${totals.erreur} erreur(s) · ${totals.attention} point(s) à vérifier · ${totals.indisponible} contrôle(s) impossible(s)`);
  if(!issues.length){const p=document.createElement('p');text(p,'Aucune anomalie détectée dans les données accessibles. Cela ne prouve pas l’absence d’autres incohérences.');list.appendChild(p);return;}
  for(const issue of issues){const row=document.createElement('div');row.className='audit-issue '+issue.level;const name=document.createElement('strong');text(name,C.TABLES[issue.kind].table+(issue.id?' · ligne #'+issue.id:''));const detail=document.createElement('span');text(detail,issue.detail);row.append(name,detail);list.appendChild(row);}
 }
 function render(){
- const auditMode=state.kind==='controles';$('audit-panel').hidden=!auditMode;$('data-layout').hidden=auditMode;
+ const auditMode=state.kind==='controles';
+ const auditPanel=$('audit-panel'), dataLayout=$('data-layout');
+ if(!auditPanel||!dataLayout){
+  message('Interface incomplète : fichiers HTML/JS de versions différentes. Publiez index.html, app.js et core.js de la même archive, puis actualisez sans cache.',true);
+  return;
+ }
+ auditPanel.hidden=!auditMode;dataLayout.hidden=auditMode;
  if(auditMode){text($('title'),'Contrôles de cohérence');text($('subtitle'),'Diagnostic de qualité sur les lignes visibles selon les droits Grist.');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section==='controles'));renderAudit();return;}
  const cfg=C.TABLES[state.kind];text($('title'),cfg.title);text($('subtitle'),cfg.description);document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===state.kind));const recs=state.records[state.kind];$('new').disabled=readOnly()||!recs||state.busy;$('search').disabled=!recs;const list=$('list');list.replaceChildren();if(!recs){text(list,'Table non accessible. Vérifier l’import et les ACL.');$('editor').hidden=true;return;}const matches=C.query(recs,$('search').value,cfg.key);for(const r of matches){const b=document.createElement('button');b.type='button';b.className='record'+(Number(r.id)===state.selected?' selected':'');text(b,`${C.displayValue(state.kind,cfg.key,r[cfg.key],state.records)||'Sans titre'} · #${r.id}`);b.addEventListener('click',()=>select(r.id));list.appendChild(b);}if(!matches.length)text(list,'Aucun élément.');renderForm();}
 function select(id){state.selected=id;render();}
