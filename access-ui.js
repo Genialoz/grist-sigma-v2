@@ -1,8 +1,8 @@
-/* SIGMA V2.0.7 — Console des habilitations : consultation et simulation locale sans écriture. */
+/* SIGMA V2.0.8 — Console des habilitations : consultation et simulation locale sans écriture. */
 (function(root,factory){const ui=factory(root);if(typeof module==='object'&&module.exports)module.exports=ui;root.SigmaAccessUI=ui;})(typeof window!=='undefined'?window:globalThis,function(root){
 'use strict';
 const A=root.SigmaAccess || (typeof require==='function'?require('./access.js'):null);
-const modes=Object.freeze(['utilisateurs','affectations','profils','diagnostic','simulation','moa','matrice']);
+const modes=Object.freeze(['utilisateurs','affectations','profils','diagnostic','simulation','moa','matrice','securite']);
 const model={mode:'utilisateurs',search:'',status:'tous',draft:null};
 const node=(tag,cls,txt)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(txt!==undefined)el.textContent=String(txt);return el;};
 const norm=x=>String(x??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -29,8 +29,24 @@ function render(rootEl,summary,records,org){rootEl.replaceChildren();summary.rep
  const counts=A.summarize(records,now);summary.textContent=`${counts.users??'—'} utilisateur(s) · ${counts.habilitations??'—'} habilitation(s) · ${counts.active??'—'} déclarée(s) active(s)`;
  const warning=node('p','access-note','Préparation uniquement — accès complet au document TEST requis par le widget actuel. Les données du référentiel ne constituent pas des droits ACL. Ne pas saisir de données réelles.');rootEl.appendChild(warning);
  const toolbar=node('div','access-toolbar');rootEl.appendChild(toolbar);
- for(const [id,name] of [['utilisateurs','Utilisateurs'],['affectations','Affectations'],['profils','Profils'],['diagnostic','Diagnostics'],['simulation','Simuler une affectation'],['moa','Décisions MOA'],['matrice','Matrice des droits']]){const b=node('button','access-tab'+(model.mode===id?' selected':''),name);b.type='button';b.setAttribute('aria-pressed',String(model.mode===id));b.addEventListener('click',()=>{model.mode=id;render(rootEl,summary,records,org);});toolbar.appendChild(b);}
+ for(const [id,name] of [['utilisateurs','Utilisateurs'],['affectations','Affectations'],['profils','Profils'],['diagnostic','Diagnostics'],['simulation','Simuler une affectation'],['moa','Décisions MOA'],['matrice','Matrice des droits'],['securite','Plan de sécurité']]){const b=node('button','access-tab'+(model.mode===id?' selected':''),name);b.type='button';b.setAttribute('aria-pressed',String(model.mode===id));b.addEventListener('click',()=>{model.mode=id;render(rootEl,summary,records,org);});toolbar.appendChild(b);}
  const content=node('div','access-view');rootEl.appendChild(content);
+ if(model.mode==='securite'){
+  const m=root.SigmaSecurity;
+  content.appendChild(node('h3',null,'Plan de sécurité — simulation sans écriture'));
+  content.appendChild(node('p','access-note','Attention : cet écran ne teste pas les ACL Grist. Il vérifie seulement des règles métier sur des cas fictifs, sans lecture ni écriture de dossiers. Ne pas considérer un résultat positif comme une autorisation réelle.'));
+  if(!m){content.appendChild(node('p','audit-issue attention','security-model.js absent : vérifier la publication GitHub.'));return;}
+  const results=m.runScenarios();const good=results.filter(s=>s.pass).length;
+  content.appendChild(node('p','access-note',good+' / '+results.length+' scénarios de logique locale conformes aux attentes de test.'));
+  const wrap=node('div','matrix-scroll');const table=node('table','rights-table');const head=node('thead');const hr=node('tr');['Scénario fictif','Attendu','Obtenu','Contrôle'].forEach(x=>hr.appendChild(node('th',null,x)));head.appendChild(hr);table.appendChild(head);
+  const body=node('tbody');for(const s of results){const tr=node('tr');[s.name,s.allow?'Accord conditionnel':'Refus',s.actual?'Accord conditionnel':'Refus',s.pass?'Conforme':'ANOMALIE'].forEach(v=>tr.appendChild(node('td',null,v)));body.appendChild(tr);}table.appendChild(body);wrap.appendChild(table);content.appendChild(wrap);
+  const heading=node('h3',null,'À valider dans Grist avec des comptes de test');content.appendChild(heading);
+  for(const item of ['Absence de lecture directe des autres dossiers par un EC (table, URL, API, export).','Supervision RC limitée : aucun nom, récit, compte rendu ou pièce avant les deux conditions.','Révocation immédiate d’un partage ou départ d’un EC.','Accès de l’AT limité à sa transmission et pièces explicitement autorisées.','Aucune modification de la fiche d’organisation par un autre profil que RC.','Aucun accès aux données nominatives par AN, ST ou DP dans leur rôle courant.','Pas de possibilité d’auto-habilitation ni de modification des tables de droits.','Contrôler les capacités du widget en accès complet avec comptes limités.']){
+    const p=node('p','access-card','☐ '+item);content.appendChild(p);
+  }
+  content.appendChild(node('p','access-note','Consulter ACL_PREPARATION.md dans le ZIP avant toute mise en place. Aucun droit n’est changé par cette version.'));
+  return;
+ }
  if(model.mode==='matrice'){
   const matrix=root.SigmaRightsMatrix;
   if(!matrix||!matrix.validate()){content.appendChild(node('p','access-note','Matrice non disponible ou invalide : vérifier rights-matrix.js.'));return;}
