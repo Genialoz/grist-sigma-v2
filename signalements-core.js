@@ -9,8 +9,18 @@
  function validate(fields,input){const result={};for(const [id,label,type,required,opts] of fields){const raw=input[id]??(type==='checkbox'?false:'');if(required&&(raw===null||raw===undefined||raw===''))throw Error(label+' obligatoire');if(type==='reference'){const n=Number(raw);if(!Number.isSafeInteger(n)||n<=0)throw Error(label+' : référence invalide');result[id]=n;}else if(type==='date'){result[id]=dateStamp(raw);}else if(type==='checkbox'){result[id]=raw===true;}else {const val=String(raw).trim();if(type==='select'&&val&&!opts.includes(val))throw Error(label+' : valeur non autorisée');if(type==='email'&&val&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val))throw Error('Adresse e-mail invalide');if(type==='textarea'&&val.length>500)throw Error('Précision trop longue (500 caractères max)');result[id]=val;}}
  if(fields===dossierFields){if(result.Statut==='Clôturé'&&!result.Date_Cloture)throw Error('Date de clôture obligatoire si clôturé');if(result.Statut!=='Clôturé'&&result.Date_Cloture)throw Error('Date de clôture réservée au statut Clôturé');if(result.Rapport_Signe_Declarant&&result.Anonyme) {/* La signature n’ouvre aucun droit automatiquement. */}}
  return result;}
+ function changedValues(oldRecord, values){
+   if(!oldRecord || !values || typeof values!=='object')throw Error('Comparaison impossible : enregistrement ou valeurs absents.');
+   const out={};
+   for(const [key,value] of Object.entries(values)){
+     const before=oldRecord[key];
+     const equal=(before===value)||(before==null&&value==null);
+     if(!equal)out[key]=value;
+   }
+   return out;
+ }
  function referenceChoices(records){return (records||[]).map(r=>({id:r.id,label:r.Nom||('#'+r.id)})).sort((a,b)=>a.label.localeCompare(b.label,'fr'));}
  function rcEligible(d){return !!(d&&d.Rapport_Signe_Declarant===true&&d.Anonymat_Leve===true);}
  function title(d){return 'SIG-'+String(d.id).padStart(6,'0');}
- return {tables,dossierFields,faitFields,rows,validate,dateStamp,referenceChoices,rcEligible,title};
+ return {tables,dossierFields,faitFields,rows,validate,dateStamp,changedValues,referenceChoices,rcEligible,title};
 });
