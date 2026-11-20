@@ -19,8 +19,17 @@
    }
    return out;
  }
+ function checkReferenceChange(field,applies,old,changes,visible){
+   if(!applies)return;
+   // Une référence inchangée ne doit pas être revalidée contre un référentiel
+   // qui peut légitimement être masqué par les ACL du lecteur.
+   if(old && !Object.prototype.hasOwnProperty.call(changes,field))return;
+   const value=changes[field];
+   if(!Array.isArray(visible)||!visible.some(r=>Number(r.id)===Number(value)))
+     throw Error(field+' inexistante ou non accessible pour cette opération');
+ }
  function referenceChoices(records){return (records||[]).map(r=>({id:r.id,label:r.Nom||('#'+r.id)})).sort((a,b)=>a.label.localeCompare(b.label,'fr'));}
  function rcEligible(d){return !!(d&&d.Rapport_Signe_Declarant===true&&d.Anonymat_Leve===true);}
  function title(d){return 'SIG-'+String(d.id).padStart(6,'0');}
- return {tables,dossierFields,faitFields,rows,validate,dateStamp,changedValues,referenceChoices,rcEligible,title};
+ return {tables,dossierFields,faitFields,rows,validate,dateStamp,changedValues,checkReferenceChange,referenceChoices,rcEligible,title};
 });
