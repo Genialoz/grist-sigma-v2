@@ -1,8 +1,8 @@
-/* SIGMA V2.0.6 — Console des habilitations : consultation et simulation locale sans écriture. */
+/* SIGMA V2.0.7 — Console des habilitations : consultation et simulation locale sans écriture. */
 (function(root,factory){const ui=factory(root);if(typeof module==='object'&&module.exports)module.exports=ui;root.SigmaAccessUI=ui;})(typeof window!=='undefined'?window:globalThis,function(root){
 'use strict';
 const A=root.SigmaAccess || (typeof require==='function'?require('./access.js'):null);
-const modes=Object.freeze(['utilisateurs','affectations','profils','diagnostic','simulation','moa']);
+const modes=Object.freeze(['utilisateurs','affectations','profils','diagnostic','simulation','moa','matrice']);
 const model={mode:'utilisateurs',search:'',status:'tous',draft:null};
 const node=(tag,cls,txt)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(txt!==undefined)el.textContent=String(txt);return el;};
 const norm=x=>String(x??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
@@ -29,8 +29,27 @@ function render(rootEl,summary,records,org){rootEl.replaceChildren();summary.rep
  const counts=A.summarize(records,now);summary.textContent=`${counts.users??'—'} utilisateur(s) · ${counts.habilitations??'—'} habilitation(s) · ${counts.active??'—'} déclarée(s) active(s)`;
  const warning=node('p','access-note','Préparation uniquement — accès complet au document TEST requis par le widget actuel. Les données du référentiel ne constituent pas des droits ACL. Ne pas saisir de données réelles.');rootEl.appendChild(warning);
  const toolbar=node('div','access-toolbar');rootEl.appendChild(toolbar);
- for(const [id,name] of [['utilisateurs','Utilisateurs'],['affectations','Affectations'],['profils','Profils'],['diagnostic','Diagnostics'],['simulation','Simuler une affectation'],['moa','Décisions MOA']]){const b=node('button','access-tab'+(model.mode===id?' selected':''),name);b.type='button';b.setAttribute('aria-pressed',String(model.mode===id));b.addEventListener('click',()=>{model.mode=id;render(rootEl,summary,records,org);});toolbar.appendChild(b);}
+ for(const [id,name] of [['utilisateurs','Utilisateurs'],['affectations','Affectations'],['profils','Profils'],['diagnostic','Diagnostics'],['simulation','Simuler une affectation'],['moa','Décisions MOA'],['matrice','Matrice des droits']]){const b=node('button','access-tab'+(model.mode===id?' selected':''),name);b.type='button';b.setAttribute('aria-pressed',String(model.mode===id));b.addEventListener('click',()=>{model.mode=id;render(rootEl,summary,records,org);});toolbar.appendChild(b);}
  const content=node('div','access-view');rootEl.appendChild(content);
+ if(model.mode==='matrice'){
+  const matrix=root.SigmaRightsMatrix;
+  if(!matrix||!matrix.validate()){content.appendChild(node('p','access-note','Matrice non disponible ou invalide : vérifier rights-matrix.js.'));return;}
+  content.appendChild(node('h3',null,'Droits métier par profil — matrice préparatoire'));
+  content.appendChild(node('p','access-note','Les décisions métier ci-dessous ne sont pas des ACL effectives. « Autorisé » signifie autorisé SOUS conditions et non accès immédiat. Aucun accès sensible nouveau ne doit être accordé via cette interface.'));
+  const controls=node('div','access-filters');content.appendChild(controls);
+  const area=node('select');area.setAttribute('aria-label','Filtrer par domaine');
+  const areas=['Tous les domaines',...new Set(matrix.rows.map(r=>r.area))];for(const a of areas){const op=node('option',null,a);op.value=a;area.appendChild(op);}controls.appendChild(area);
+  const prof=node('select');prof.setAttribute('aria-label','Filtrer par profil');
+  for(const [code,label] of [['','Tous les profils'],...matrix.profiles]){const opt=node('option',null,code?code+' — '+label:label);opt.value=code;prof.appendChild(opt);}controls.appendChild(prof);
+  const result=node('div','matrix-results');content.appendChild(result);
+  function drawMatrix(){result.replaceChildren();const chosen=prof.value;const selected=chosen?matrix.profiles.filter(p=>p[0]===chosen):matrix.profiles;
+   const wrap=node('div','matrix-scroll');const table=node('table','rights-table');const thead=node('thead');const top=node('tr');for(const h of ['Action / périmètre',...selected.map(p=>p[0])])top.appendChild(node('th',null,h));thead.appendChild(top);table.appendChild(thead);const tbody=node('tbody');
+   for(const r of matrix.rows.filter(x=>area.value==='Tous les domaines'||x.area===area.value)){const tr=node('tr');const summary=node('td');summary.appendChild(node('strong',null,r.area+' — '+r.action));summary.appendChild(node('small',null,r.ref+' · '+r.condition));tr.appendChild(summary);
+    for(const [code] of selected){const td=node('td');const value=r.rights[code];const chip=node('span','right-state right-'+value,matrix.states[value]);td.appendChild(chip);tr.appendChild(td);}tbody.appendChild(tr);}table.appendChild(tbody);wrap.appendChild(table);result.appendChild(wrap);
+   const note=node('p','muted','Légende : droits limités = conditions particulières ; « à arbitrer » = accès non accordé à ce stade. Les profils et règles restent soumis aux ACL, contrôles serveur, validation métier et tests multi-comptes.');result.appendChild(note);
+  }
+  area.addEventListener('change',drawMatrix);prof.addEventListener('change',drawMatrix);drawMatrix();return;
+ }
  if(model.mode==='moa'){
   const policy=root.SigmaMOA;
   if(!policy){content.appendChild(node('p','access-note','Module des décisions MOA indisponible. Vérifier moa-rules.js.'));return;}

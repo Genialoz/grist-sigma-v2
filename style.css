@@ -11,3 +11,13 @@
 
 /* V2.0.5 — console de préparation, en lecture seule */
 .access-toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.access-tab{border:1px solid #bed0e0;border-radius:8px;background:#f6f9fc;color:#24415f;padding:9px 12px;font-weight:600}.access-tab.selected{background:#245e93;color:white;border-color:#245e93}.access-view{display:grid;gap:12px}.access-view h3{margin:8px 0 0}.access-filters{display:flex;gap:10px;flex-wrap:wrap}.access-filters input,.access-filters select,.access-field input,.access-field select{border:1px solid #b8c9dc;border-radius:8px;padding:10px;min-width:190px;max-width:100%;background:#fff;color:#243650;font:inherit}.access-filters input{flex:1}.access-results{max-height:55vh;overflow:auto;display:grid;gap:8px}.access-card{display:grid;gap:5px;padding:12px;border:1px solid #e1eaf4;border-radius:9px;overflow-wrap:anywhere;background:#f9fbfe}.access-card small{color:#65758d}.access-draft{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px;align-items:end}.access-field{display:grid;gap:6px;font-weight:600}.access-preview{border:0;border-radius:8px;background:#245e93;color:white;padding:11px;font-weight:700}.access-draft-result{display:grid;gap:8px;margin-top:10px}.access-note{overflow-wrap:anywhere}
+
+/* V2.0.7 : matrice des habilitations */
+.matrix-scroll{overflow-x:auto;max-width:100%;border:1px solid #dce3eb;border-radius:9px;margin:12px 0;}
+.rights-table{width:100%;border-collapse:collapse;min-width:690px;font-size:12px;}
+.rights-table th,.rights-table td{padding:10px 8px;border-bottom:1px solid #e5e9ef;vertical-align:top;text-align:left;}
+.rights-table th{background:#eef3f9;white-space:nowrap;position:sticky;top:0;}
+.rights-table td:first-child{min-width:280px;max-width:480px;}
+.rights-table td small{display:block;margin-top:5px;color:#526071;line-height:1.45;}
+.right-state{display:inline-block;border:1px solid #c7d2df;border-radius:6px;padding:4px 6px;font-weight:600;white-space:normal;min-width:85px;}
+.right-yes{background:#e9f5ee;color:#175b36}.right-limited{background:#fff3db;color:#795000}.right-no{background:#f0f2f4;color:#526071}.right-pending{background:#fbe9e9;color:#923636}
