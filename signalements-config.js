@@ -1,2 +1,2 @@
-/* Ne passer à true qu'après installation et test des ACL Owner uniquement sur les deux nouvelles tables. */
-window.SIGMA_DOSSIERS_CONFIG = Object.freeze({TEST_WRITES_ENABLED:false});
+/* V2.1.1 — Ecritures TEST uniquement. ACL Owner-only obligatoires. Ne pas utiliser avec des donnees reelles. */
+window.SIGMA_DOSSIERS_CONFIG = Object.freeze({TEST_WRITES_ENABLED:true});
