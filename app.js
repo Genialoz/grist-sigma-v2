@@ -1,6 +1,6 @@
 'use strict';
-const $=id=>document.getElementById(id), C=window.SigmaCore;
-const state={kind:'cellules',records:{},selected:null,ready:false,busy:false};
+const $=id=>document.getElementById(id), C=window.SigmaCore, A=window.SigmaAccess;
+const state={kind:'cellules',records:{},selected:null,ready:false,busy:false,access:{}};
 const text=(el,s)=>{el.textContent=String(s??'');};
 function message(msg,error=false){const el=$('alert');text(el,msg);el.className='alert '+(error?'error':'info');}
 function readOnly(){return !window.SIGMA_CONFIG?.WRITE_ENABLED;}
@@ -8,8 +8,28 @@ async function refresh(){
  if(!state.ready)return;
  message('Chargement des données…');
  try {const data={};for(const kind of Object.keys(C.TABLES)){try{data[kind]=C.rows(await grist.docApi.fetchTable(C.TABLES[kind].table));}catch(e){data[kind]=null;}}
- state.records=data;render();const missing=Object.keys(data).filter(k=>data[k]===null);message(missing.length?'Tables absentes ou interdites : '+missing.map(k=>C.TABLES[k].table).join(', ')+'. Aucune permission contournée.':'Données actualisées. '+(readOnly()?'Écriture désactivée en attente de validation ACL.':''),!!missing.length);
+ state.records=data;const access={};for(const [name,table] of Object.entries(A.TABLES)){try{access[name]=C.rows(await grist.docApi.fetchTable(table));}catch(e){access[name]=null;}}state.access=access;render();const missing=Object.keys(data).filter(k=>data[k]===null);message(missing.length?'Tables absentes ou interdites : '+missing.map(k=>C.TABLES[k].table).join(', ')+'. Aucune permission contournée.':'Données actualisées. '+(readOnly()?'Écriture désactivée en attente de validation ACL.':''),!!missing.length);
  }catch(e){message('Erreur Grist : '+e.message,true);}}
+
+function renderAccess(){
+ const list=$('access-list'),summary=$('access-summary');if(!list||!summary){message('Interface habilitations incomplète : mettre à jour les fichiers du widget.',true);return;}
+ list.replaceChildren();summary.replaceChildren();const now=Date.now()/1000, data=state.access;
+ const counts=A.summarize(data,now);text(summary,`Utilisateurs : ${counts.users??'indisponible'} · Habilitations : ${counts.habilitations??'indisponible'} · Actives à ce jour : ${counts.active??'indisponible'}`);
+ const issues=A.validate(data,state.records,now);const make=(parent,tag,s,cls)=>{const el=document.createElement(tag);if(cls)el.className=cls;text(el,s);parent.appendChild(el);return el;};
+ const note=make(list,'div','Référentiel de préparation seulement : ni ces données ni les boutons du widget ne constituent un contrôle ACL.','access-note');
+ const panels=[['Profils officiels','profils'],['Utilisateurs','utilisateurs'],['Affectations et habilitations','habilitations']];
+ for(const [label,key] of panels){const section=document.createElement('section');section.className='access-block';make(section,'h3',label);const entries=data[key];if(!Array.isArray(entries)){make(section,'p','Table absente ou inaccessible. Importer le CSV correspondant dans SIGMA V2-TEST.');list.appendChild(section);continue;}
+ if(!entries.length)make(section,'p','Aucun enregistrement.');
+ for(const r of entries.slice(0,250)){let content='';if(key==='profils')content=String(r.Code||'')+' — '+String(r.Libelle||'');
+ else if(key==='utilisateurs')content=String(r.Email||'')+' — '+String(r.Nom_Affiche||'')+(r.Actif===false?' (inactif)':'');
+ else {const u=data.utilisateurs?.find(x=>Number(x.id)===Number(r.Utilisateur));const p=data.profils?.find(x=>Number(x.id)===Number(r.Profil));const c=state.records.cellules?.find(x=>Number(x.id)===Number(r.Cellule));content=(u?.Email||'Utilisateur #'+r.Utilisateur)+' · '+(p?.Code||'Profil #'+r.Profil)+' · '+(c?.Nom||(!r.Cellule?'Périmètre non local':'Cellule #'+r.Cellule))+' · '+(A.validOn(r,now)?'Active':'Non active')+' · '+String(r.Debut||'Date non définie');}
+ make(section,'div',content,'access-item');}
+ if(entries.length>250)make(section,'p','Affichage limité aux 250 premiers enregistrements.');list.appendChild(section);
+ }
+ const diag=document.createElement('section');diag.className='access-block';make(diag,'h3','Contrôles des habilitations');if(!issues.length)make(diag,'p','Aucune anomalie détectée dans les lignes accessibles (ne vaut pas validation de sécurité).');
+ for(const issue of issues){make(diag,'div',issue.message,'audit-issue '+issue.level);}list.appendChild(diag);
+}
+
 function renderAudit(){
  const issues=C.audit(state.records);
  const summary=$('audit-summary'),list=$('audit-list');
@@ -21,13 +41,14 @@ function renderAudit(){
  for(const issue of issues){const row=document.createElement('div');row.className='audit-issue '+issue.level;const name=document.createElement('strong');text(name,C.TABLES[issue.kind].table+(issue.id?' · ligne #'+issue.id:''));const detail=document.createElement('span');text(detail,issue.detail);row.append(name,detail);list.appendChild(row);}
 }
 function render(){
- const auditMode=state.kind==='controles';
- const auditPanel=$('audit-panel'), dataLayout=$('data-layout');
- if(!auditPanel||!dataLayout){
+ const auditMode=state.kind==='controles', accessMode=state.kind==='habilitations';
+ const auditPanel=$('audit-panel'), dataLayout=$('data-layout'), accessPanel=$('access-panel');
+ if(!auditPanel||!dataLayout||!accessPanel){
   message('Interface incomplète : fichiers HTML/JS de versions différentes. Publiez index.html, app.js et core.js de la même archive, puis actualisez sans cache.',true);
   return;
  }
- auditPanel.hidden=!auditMode;dataLayout.hidden=auditMode;
+ auditPanel.hidden=!auditMode;accessPanel.hidden=!accessMode;dataLayout.hidden=auditMode||accessMode;
+ if(accessMode){text($('title'),'Utilisateurs et habilitations');text($('subtitle'),'Préparation des rattachements — aucune attribution de droits actifs');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section==='habilitations'));renderAccess();return;}
  if(auditMode){text($('title'),'Contrôles de cohérence');text($('subtitle'),'Diagnostic de qualité sur les lignes visibles selon les droits Grist.');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section==='controles'));renderAudit();return;}
  const cfg=C.TABLES[state.kind];text($('title'),cfg.title);text($('subtitle'),cfg.description);document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===state.kind));const recs=state.records[state.kind];$('new').disabled=readOnly()||!recs||state.busy;$('search').disabled=!recs;const list=$('list');list.replaceChildren();if(!recs){text(list,'Table non accessible. Vérifier l’import et les ACL.');$('editor').hidden=true;return;}const matches=C.query(recs,$('search').value,cfg.key);for(const r of matches){const b=document.createElement('button');b.type='button';b.className='record'+(Number(r.id)===state.selected?' selected':'');text(b,`${C.displayValue(state.kind,cfg.key,r[cfg.key],state.records)||'Sans titre'} · #${r.id}`);b.addEventListener('click',()=>select(r.id));list.appendChild(b);}if(!matches.length)text(list,'Aucun élément.');renderForm();}
 function select(id){state.selected=id;render();}
