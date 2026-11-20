@@ -11,6 +11,30 @@
  function rows(raw){if(Array.isArray(raw))return raw;if(!raw||!Array.isArray(raw.id))throw Error('Format des données Grist inattendu');return raw.id.map((id,i)=>Object.fromEntries([['id',id],...Object.entries(raw).filter(([k,v])=>k!=='id'&&Array.isArray(v)).map(([k,v])=>[k,v[i]])]));}
  function value(field,input){const type=field[2];if(type==='checkbox')return !!input;if(type==='reference'){const n=Number(input);if(!Number.isSafeInteger(n)||n<=0)throw Error(field[1]+' : identifiant invalide');return n;}if(type==='year'){const n=Number(input);if(!Number.isInteger(n)||n<2000||n>2100)throw Error('Année invalide');return n;}if(type==='number'){if(input==='')return null;const n=Number(input);if(!Number.isFinite(n)||n<0)throw Error(field[1]+' : nombre invalide');return n;}if(type==='date'){if(!input)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(input)||Number.isNaN(Date.parse(input)))throw Error('Date invalide');return Math.floor(Date.parse(input+'T00:00:00Z')/1000);}return String(input??'').trim().slice(0,type==='textarea'?4000:250);}
  function validate(kind,source){const cfg=TABLES[kind];if(!cfg)throw Error('Rubrique inconnue');const fields={};for(const f of cfg.fields){const raw=source[f[0]]??(f[2]==='checkbox'?false:'');if(f[3]&&(raw===''||raw===null||raw===undefined))throw Error(f[1]+' est obligatoire');fields[f[0]]=value(f,raw);if(f[2]==='select'&&fields[f[0]]&&!f[4].includes(fields[f[0]]))throw Error('Option non autorisée : '+f[1]);}return fields;}
+ const REFERENCES={cellules:{Entite:'entites'},membres:{Cellule:'cellules'},conventions:{Cellule:'cellules'},fiche:{Cellule:'cellules'}};
+ function referenceKind(kind,field){return REFERENCES[kind]?.[field]||null;}
+ function referenceOptions(kind,field,records){const target=referenceKind(kind,field);if(!target)return [];
+  const rows=records?.[target];if(!Array.isArray(rows))return [];
+  const labelKey=TABLES[target].key;
+  return rows.filter(r=>Number.isSafeInteger(Number(r.id))&&Number(r.id)>0)
+   .map(r=>({id:Number(r.id),label:String(r[labelKey]||r.Code||'Enregistrement '+r.id)}))
+   .sort((a,b)=>a.label.localeCompare(b.label,'fr'));
+ }
+ function displayValue(kind,key,val,records){const target=referenceKind(kind,key);
+  if(target && val!==null && val!==undefined && val!==''){
+   const opt=referenceOptions(kind,key,records).find(r=>r.id===Number(val));
+   return opt?opt.label:'Référence #'+String(val)+' (non accessible ou absente)';
+  }
+  return val??'';
+ }
+ function duplicateError(kind,values,records,excludeId){const existing=records?.[kind]||[];
+  const same=(a,b)=>String(a??'').trim().toLocaleLowerCase('fr')===String(b??'').trim().toLocaleLowerCase('fr');
+  if(kind==='entites'||kind==='cellules'){
+   if(existing.some(r=>Number(r.id)!==Number(excludeId)&&same(r.Code,values.Code)))return 'Ce code existe déjà dans cette table.';
+  }
+  if(kind==='fiche'&&existing.some(r=>Number(r.id)!==Number(excludeId)&&Number(r.Cellule)===Number(values.Cellule)&&Number(r.Exercice)===Number(values.Exercice)))return 'Une fiche existe déjà pour cette cellule et cet exercice.';
+  return null;
+ }
  function query(rows,txt,key){const s=String(txt||'').trim().toLocaleLowerCase('fr');return rows.filter(r=>!s||Object.values(r).some(v=>String(v??'').toLocaleLowerCase('fr').includes(s))).sort((a,b)=>String(a[key]??'').localeCompare(String(b[key]??''),'fr'));}
- return {TABLES,rows,value,validate,query};
+ return {TABLES,rows,value,validate,query,referenceKind,referenceOptions,displayValue,duplicateError};
 });
