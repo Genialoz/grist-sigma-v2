@@ -35,6 +35,38 @@
   if(kind==='fiche'&&existing.some(r=>Number(r.id)!==Number(excludeId)&&Number(r.Cellule)===Number(values.Cellule)&&Number(r.Exercice)===Number(values.Exercice)))return 'Une fiche existe déjà pour cette cellule et cet exercice.';
   return null;
  }
+ function audit(records){
+  const findings=[];
+  const push=(level,kind,id,detail)=>findings.push({level,kind,id,detail});
+  for(const [kind,cfg] of Object.entries(TABLES)){
+   const dataset=records?.[kind];
+   if(!Array.isArray(dataset)){push('indisponible',kind,null,'Table non accessible : contrôles impossibles.');continue;}
+   const seen=new Map();
+   for(const row of dataset){
+    for(const field of cfg.fields){
+     const [column,,type,required]=field, val=row[column];
+     if(required&&(val===null||val===undefined||val===''||(type==='reference'&&Number(val)<=0))){push('erreur',kind,row.id,'Champ obligatoire vide : '+column);}
+     const target=referenceKind(kind,column);
+     if(target&&val!==null&&val!==undefined&&val!==''&&Number(val)!==0){
+      if(!Number.isSafeInteger(Number(val))||Number(val)<1){push('erreur',kind,row.id,'Référence invalide : '+column);}
+      else if(Array.isArray(records[target])&&!records[target].some(r=>Number(r.id)===Number(val))){push('attention',kind,row.id,'Référence '+column+' non retrouvée parmi les enregistrements visibles (absente ou filtrée par ACL).');}
+      else if(!Array.isArray(records[target])){push('indisponible',kind,row.id,'Référence '+column+' non vérifiable : table liée inaccessible.');}
+     }
+    }
+    const uniq=(kind==='entites'||kind==='cellules')?String(row.Code??'').trim().toLocaleLowerCase('fr'):(kind==='fiche'?String(row.Cellule??'')+'|'+String(row.Exercice??''):'');
+    if(uniq&&uniq!=='|'&&uniq!=='0|0'){
+     if(seen.has(uniq))push('erreur',kind,row.id,'Doublon avec la ligne #'+seen.get(uniq));
+     else seen.set(uniq,row.id);
+    }
+    const pairs=kind==='membres'?[['Date_Entree','Date_Sortie']]:kind==='conventions'?[['Date_Signature','Date_Echeance'],['Date_Effet','Date_Echeance']]:kind==='cellules'?[['Date_Creation','Date_Service']]:[];
+    for(const [a,b] of pairs){const first=dateOrder(row[a]),last=dateOrder(row[b]);if(first!==null&&last!==null&&first>last)push('attention',kind,row.id,'Chronologie à vérifier : '+a+' postérieure à '+b);}
+    if(kind==='membres'&&row.Quotite!==null&&row.Quotite!==undefined&&row.Quotite!==''&&Number(row.Quotite)<0)push('erreur',kind,row.id,'Quotité négative');
+    if(kind==='fiche'&&row.Exercice!==null&&row.Exercice!==undefined&&row.Exercice!==''&&(!Number.isInteger(Number(row.Exercice))||Number(row.Exercice)<2000||Number(row.Exercice)>2100))push('erreur',kind,row.id,'Exercice invalide');
+   }
+  }
+  return findings;
+ }
+ function dateOrder(v){if(v===null||v===undefined||v==='')return null;if(typeof v==='number'&&Number.isFinite(v))return v;const t=Date.parse(String(v));return Number.isFinite(t)?t/1000:null;}
  function query(rows,txt,key){const s=String(txt||'').trim().toLocaleLowerCase('fr');return rows.filter(r=>!s||Object.values(r).some(v=>String(v??'').toLocaleLowerCase('fr').includes(s))).sort((a,b)=>String(a[key]??'').localeCompare(String(b[key]??''),'fr'));}
- return {TABLES,rows,value,validate,query,referenceKind,referenceOptions,displayValue,duplicateError};
+ return {TABLES,rows,value,validate,query,referenceKind,referenceOptions,displayValue,duplicateError,audit};
 });
