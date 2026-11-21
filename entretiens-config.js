@@ -1,2 +1,2 @@
-/* Prototype Owner-only. Ne jamais activer sur des données réelles sans ACL et validation de sécurité. */
+/* TEST UNIQUEMENT. Les boutons ne remplacent jamais les contrôles ACL Grist. */
 window.SIGMA_ENTRETIENS_CONFIG = Object.freeze({TEST_WRITES_ENABLED:true});
