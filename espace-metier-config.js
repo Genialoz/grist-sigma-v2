@@ -1,4 +1,9 @@
-/* Renseigner uniquement des pages Grist TEST existantes et déjà autorisées (liens facultatifs). */
+/* SIGMA V2.6.0 TEST. Liens vers les pages Grist TEST existantes : aucun lien PROD, aucun jeton. */
 window.SIGMA_ESPACE_CONFIG=Object.freeze({links:[
-{title:'Signalements',url:''},{title:'Entretiens et CR',url:''},{title:'Préparer un partage CR',url:''},{title:'Rapports internes',url:''},{title:'Organisation',url:''}
+  {title:'Dossiers et faits',description:'Créer et mettre à jour les dossiers autorisés',url:''},
+  {title:'Entretiens et comptes rendus',description:'Saisir les entretiens et préparer les versions de CR',url:''},
+  {title:'Préparations et révocations de CR',description:'Préparer et révoquer les consultations internes TEST',url:''},
+  {title:'Rapports internes',description:'Créer et consulter les versions de rapports',url:''},
+  {title:'Partages de rapports',description:'Préparer et révoquer les partages internes',url:''},
+  {title:'Organisation et habilitations',description:'Gestion des cellules et des affectations selon vos droits',url:''}
 ]});
