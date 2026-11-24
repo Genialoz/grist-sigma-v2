@@ -15,6 +15,19 @@ function metric(title,count,detail){const el=node('div','metric');el.append(node
 function nav(tab){ui.tab=tab;for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===tab;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}for(const sec of document.querySelectorAll('.tab'))sec.hidden=sec.id!=='tab-'+tab;const names={accueil:['Vue d’ensemble','Synthèse des informations accessibles'],rc:['Supervision RC','Synthèse non nominative de la cellule autorisée'],dossiers:['Dossiers','Consultation des dossiers et de leurs éléments liés'],entretiens:['Entretiens et comptes rendus','Historique des entretiens et versions accessibles'],rapports:['Rapports internes','Consultation des rapports autorisés, en lecture seule'],outils:['Modules métier','Accéder aux actions disponibles dans SIGMA TEST'],nouveau:['Nouveau signalement','Création EC : attribution par formule Grist'],agenda:['Mon agenda','Rendez-vous liés aux dossiers autorisés']};set($('page-title'),names[tab][0]);set($('page-subtitle'),names[tab][1]);render();}
 function visibleDossiers(){const ds=state.dossiers;if(!Array.isArray(ds))return null;const term=$('search').value.toLocaleLowerCase('fr').trim(),filter=$('status-filter').value;return C.sorted(ds).filter(d=>(!filter||String(d.Statut||'')===filter)&&(!term||[C.dossierLabel(d.id),d.id,d.Statut,d.Canal].map(x=>String(x??'')).join(' ').toLocaleLowerCase('fr').includes(term)));}
 function showDossier(id){const d=(state.dossiers||[]).find(x=>Number(x.id)===Number(id));if(!d)return;ui.selected=d.id;nav('dossiers');renderDetail();$('dossier-detail').scrollIntoView?.({behavior:'smooth',block:'nearest'});}
+// V2.6.4.1 — Affichage des prochains RDV, toujours limité aux dossiers accessibles.
+function renderUpcoming(){
+ const root=$('upcoming-rdv');root.replaceChildren();
+ if(!Array.isArray(state.dossiers)||!Array.isArray(state.rdv)){
+  empty(root,'Prochains rendez-vous indisponibles : vérifier les tables et les ACL.');return;
+ }
+ const now=Math.floor(Date.now()/1000);
+ const rows=sortRdv(state.rdv.filter(r=>appointmentAllowed(r)&&Number(r.Debut)>=now&&r.Statut!=='Annulé')).slice(0,5);
+ if(!rows.length){empty(root,'Aucun rendez-vous à venir accessible.');return;}
+ for(const r of rows){
+  root.append(item(formatRdv(r.Debut),C.dossierLabel(r.Dossier)+' · '+val(r.Modalite),val(r.Statut,'Prévu'),()=>{nav('agenda');$('agenda-date').value=localDate(rdvDate(r.Debut));renderAgenda();}));
+ }
+}
 function renderHome(){const m=$('metrics');m.replaceChildren();m.append(metric('Dossiers',count(state,'dossiers'),'Autorisés'),metric('Entretiens',count(state,'entretiens'),'Accessibles'),metric('Comptes rendus',count(state,'cr'),'Versions visibles'),metric('Rapports',count(state,'rapports'),'Internes visibles'));
 renderUpcoming();const recent=$('recent-dossiers');recent.replaceChildren();if(state.dossiers===null)empty(recent,'Table dossiers inaccessible : ne pas déduire le nombre de dossiers de la cellule.');else if(!state.dossiers.length)empty(recent,'Aucun dossier accessible.');else for(const d of C.sorted(state.dossiers).slice(0,6))recent.append(item(C.dossierLabel(d.id),'Canal : '+val(d.Canal)+' · EC : '+val(d.EC_Email,'Non affecté'),val(d.Statut,'Nouveau'),()=>showDossier(d.id)));
 const area=$('status-stats');area.replaceChildren();const stats=C.stats(state);if(!stats){empty(area,'Statistiques indisponibles : accès à la table dossiers refusé.');return;}if(!stats.total){empty(area,'Aucune donnée accessible.');return;}for(const [key,value] of Object.entries(stats.byStatus)){const row=node('div','status-row');row.append(node('span',null,key));const bar=node('span','bar'),inner=document.createElement('i');inner.style.width=(100*value/stats.total)+'%';bar.append(inner);row.append(bar,node('span','value',value));area.append(row);}}
