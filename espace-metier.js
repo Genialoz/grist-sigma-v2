@@ -4,6 +4,8 @@ const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null,rcCible
 const METIER_TABLES={cellules:'SIGMA_CELLULES',habilitations:'SIGMA_V2_EC_HABILITATIONS_TEST',affectations:'SIGMA_V2_AFFECTATIONS_TEST',rdv:'SIGMA_V2_RENDEZ_VOUS_TEST',rdvHist:'SIGMA_V2_RDV_HISTORIQUE_TEST',faits:'SIGMA_V2_FAITS_TEST',discriminations:'SIGMA_V2_FAITS_DISCRIMINATION_TEST',rcHabilitations:'SIGMA_V2_RC_HABILITATIONS_TEST',habJournal:'SIGMA_V2_HABILITATIONS_JOURNAL_TEST'};
 const CENTRAL_ACCESS_TABLE='SIGMA_V2_UI_ACCES_CENTRAL_TEST';
 const CENTRAL_ADMINS_TABLE='SIGMA_V2_ADMINS_CENTRAUX_TEST';
+const CELL_ARCHIVE_FIELD='Archivee';
+const cellActive=c=>c&&c[CELL_ARCHIVE_FIELD]!==true;
 const SIGMA_FAITS_TABLE='SIGMA_V2_FAITS_TEST';
 const SIGMA_DISCRIMINATION_TABLE='SIGMA_V2_FAITS_DISCRIMINATION_TEST';
 const MOTIFS=Object.freeze(['Violences physiques','Violences verbales','Discrimination','Harcèlement moral','Agissement sexiste','Violences sexuelles','Violences intrafamiliales','Non précisé','Hors champ']);
@@ -141,10 +143,28 @@ function managedRcCells(){
  // aucune délégation n'est inférée du rôle Owner dans cette fonction.
  if(ownerEmailSet.size!==1)return [];
  const ids=new Set(active.map(x=>Number(x.Cellule)));
- return state.cellules.filter(c=>ids.has(Number(c.id)));
+ return state.cellules.filter(c=>cellActive(c)&&ids.has(Number(c.id)));
 }
 // V2.6.9 — création contrôlée d'une cellule par l'administration centrale.
 // Le widget ne transmet que Code/Nom ; l'ACL Grist sur SIGMA_CELLULES reste obligatoire.
+// V2.7.1 — référentiel cellules : code immuable, nom modifiable, archivage réversible.
+// Ne jamais effacer une cellule référencée : l'archivage conserve les identifiants Grist.
+function resetCentralCelluleEditor(){
+ $('central-cellule-form').reset();$('central-cellule-edit-id').value='';
+ $('central-cellule-code').readOnly=false;
+ set($('central-cellule-save'),'Créer la cellule');
+ $('central-cellule-cancel').hidden=true;
+}
+function editCentralCellule(c){
+ if(!ui.centralAllowed||ui.busy)return;
+ $('central-cellule-edit-id').value=String(c.id);
+ $('central-cellule-code').value=String(c.Code||'');
+ $('central-cellule-code').readOnly=true;
+ $('central-cellule-nom').value=String(c.Nom||'');
+ set($('central-cellule-save'),'Enregistrer le nom');
+ $('central-cellule-cancel').hidden=false;
+ $('central-cellule-nom').focus();
+}
 function renderCentralCellules(){
  const panel=$('central-cellules-panel'),list=$('central-cellules-list'),message=$('central-cellules-message');
  panel.hidden=!ui.centralAllowed;
@@ -154,29 +174,67 @@ function renderCentralCellules(){
  list.replaceChildren();
  if(!available){empty(list,'Table SIGMA_CELLULES non accessible. Vérifier les ACL centrales et son existence.');return;}
  const records=[...state.cellules].sort((a,b)=>String(a.Code||'').localeCompare(String(b.Code||''),'fr'));
- for(const c of records){const code=String(c.Code||''),name=String(c.Nom||'');list.append(item(code||'Code manquant',name||'Nom non renseigné','Cellule'));}
+ for(const c of records){
+  const code=String(c.Code||''),name=String(c.Nom||'');
+  const el=node('div','record'),info=node('span','record-main');
+  info.append(node('strong',null,code||'Code manquant'),node('small',null,(name||'Nom non renseigné')+(cellActive(c)?'':' · ARCHIVÉE')));el.append(info);
+  const btn=node('button','btn btn-light','Modifier le nom');btn.type='button';btn.disabled=ui.busy||!quickEnabled();btn.addEventListener('click',()=>editCentralCellule(c));el.append(btn);
+  const archive=node('button','btn btn-light',cellActive(c)?'Archiver':'Réactiver');archive.type='button';archive.disabled=ui.busy||!quickEnabled();archive.addEventListener('click',()=>setCelluleArchive(c,cellActive(c)));el.append(archive);
+  // Suppression physique volontairement non proposée : les références peuvent
+  // exister dans des tables sensibles inaccessibles au profil central.
+  list.append(el);
+ }
  if(!records.length)empty(list,'Aucune cellule enregistrée.');
- if(!message.textContent.trim())set(message,'Gestion des cellules réservée aux administrateurs centraux habilités. Les codes ne doivent pas être réutilisés.');
+ if(!message.textContent.trim())set(message,'Le code d’une cellule est immuable. « Archiver » la retire des nouveaux choix sans supprimer ses dossiers ou habilitations.');
 }
 async function saveCentralCellule(event){event.preventDefault();const message=$('central-cellules-message');
  try{
-  if(!ui.centralAllowed||ui.busy||!quickEnabled()||!Array.isArray(state.cellules))throw Error('Création centrale non autorisée ou référentiel cellules inaccessible.');
-  const code=$('central-cellule-code').value.trim().toUpperCase();
-  const nom=$('central-cellule-nom').value.trim();
-  if(!/^[A-Z][A-Z0-9_\-]{1,39}$/.test(code))throw Error('Code : 2 à 40 caractères, lettres A-Z, chiffres, _ ou -, débutant par une lettre.');
+  if(!ui.centralAllowed||ui.busy||!quickEnabled()||!Array.isArray(state.cellules))throw Error('Administration centrale non autorisée ou référentiel cellules inaccessible.');
+  const editId=Number($('central-cellule-edit-id').value||0),code=$('central-cellule-code').value.trim().toUpperCase(),nom=$('central-cellule-nom').value.trim();
   if(nom.length<3||nom.length>150)throw Error('Nom : entre 3 et 150 caractères.');
-  if(state.cellules.some(c=>String(c.Code||'').trim().toUpperCase()===code))throw Error('Une cellule porte déjà ce code.');
-  if(!confirm('Créer la cellule « '+code+' — '+nom+' » dans SIGMA TEST ?'))return;
-  ui.busy=true;$('central-cellule-save').disabled=true;
-  await grist.docApi.applyUserActions([['AddRecord',METIER_TABLES.cellules,null,{Code:code,Nom:nom}]]);
-  $('central-cellule-form').reset();await reload();set(message,'Cellule créée dans SIGMA_CELLULES. Elle est désormais disponible dans la liste d’habilitation RC.');
- }catch(e){set(message,'Création de cellule refusée : '+(e?.message||e));}
+  const previous=editId?state.cellules.find(c=>Number(c.id)===editId):null;
+  if(editId&&!previous)throw Error('Cellule à modifier introuvable : actualiser.');
+  if(previous){
+   if(code!==String(previous.Code||''))throw Error('Code de cellule immuable.');
+   if(!cellActive(previous))throw Error('Réactiver la cellule avant de modifier son nom.');
+   if(nom===String(previous.Nom||'')){set(message,'Nom inchangé.');return;}
+   if(!confirm('Modifier le nom de '+code+' en « '+nom+' » ?'))return;
+   ui.busy=true;
+   await grist.docApi.applyUserActions([['UpdateRecord',METIER_TABLES.cellules,editId,{Nom:nom}]]);
+  }else{
+   if(!/^[A-Z][A-Z0-9_\-]{1,39}$/.test(code))throw Error('Code : 2 à 40 caractères, lettres A-Z, chiffres, _ ou -, débutant par une lettre.');
+   if(state.cellules.some(c=>String(c.Code||'').trim().toUpperCase()===code))throw Error('Une cellule porte déjà ce code, même si elle est archivée.');
+   if(!confirm('Créer la cellule « '+code+' — '+nom+' » dans SIGMA TEST ?'))return;
+   ui.busy=true;
+   await grist.docApi.applyUserActions([['AddRecord',METIER_TABLES.cellules,null,{Code:code,Nom:nom,Archivee:false}]]);
+  }
+  resetCentralCelluleEditor();await reload();set(message,previous?'Nom de cellule mis à jour.':'Cellule créée. Elle est disponible pour les habilitations RC.');
+ }catch(e){set(message,'Enregistrement de cellule refusé : '+(e?.message||e));}
+ finally{ui.busy=false;renderCentralCellules();}
+}
+async function setCelluleArchive(c,archive){const message=$('central-cellules-message');
+ try{
+  if(!ui.centralAllowed||ui.busy||!quickEnabled()||!Array.isArray(state.cellules))throw Error('Opération non autorisée.');
+  if(!c||!Number.isSafeInteger(Number(c.id)))throw Error('Cellule invalide.');
+  if(archive){
+   // Empêcher l'archivage d'une cellule utilisée par un dossier/habilitation
+   // visible. Un accès partiel aux données sensibles ne doit pas être interprété
+   // comme une absence de dépendance.
+   if(!Array.isArray(state.dossiers)||!Array.isArray(state.rcHabilitations)||!Array.isArray(state.habilitations))throw Error('Archivage bloqué : vérifier toutes les dépendances avec le compte technique Owner.');
+   const tables=[state.dossiers,state.rcHabilitations,state.habilitations];
+   if(tables.some(rows=>rows.some(r=>Number(r.Cellule)===Number(c.id))))throw Error('Archivage bloqué : cellule utilisée par un dossier ou une habilitation (même inactive).');
+  }
+  if(!confirm((archive?'Archiver':'Réactiver')+' '+String(c.Code||'')+' ? '+(archive?'La cellule disparaîtra des nouveaux choix, mais ses données seront conservées.':'Elle pourra être à nouveau sélectionnée.')))return;
+  ui.busy=true;
+  await grist.docApi.applyUserActions([['UpdateRecord',METIER_TABLES.cellules,Number(c.id),{Archivee:archive}]]);
+  await reload();set(message,archive?'Cellule archivée sans suppression des données.':'Cellule réactivée.');
+ }catch(e){set(message,'Changement de statut refusé : '+(e?.message||e));}
  finally{ui.busy=false;renderCentralCellules();}
 }
 function renderCentralHabilitations(){if(!ui.centralAllowed)return;
  const panel=$('central-habilitations-panel'),msg=$('central-rc-message'),sel=$('central-rc-cellule'),list=$('central-rc-list');
  const old=sel.value;sel.replaceChildren(new Option('— Choisir une cellule —',''));
- for(const c of state.cellules||[])sel.add(new Option(cellLabel(c),String(c.id)));
+ for(const c of (state.cellules||[]).filter(cellActive))sel.add(new Option(cellLabel(c),String(c.id)));
  if([...sel.options].some(o=>o.value===old))sel.value=old;
  panel.hidden=!Array.isArray(state.rcHabilitations)||!Array.isArray(state.cellules);
  $('central-rc-save').disabled=ui.busy||!quickEnabled()||!Array.isArray(state.rcHabilitations)||!Array.isArray(state.cellules);
@@ -195,7 +253,7 @@ function renderCentralHabilitations(){if(!ui.centralAllowed)return;
 async function saveCentralHabilitation(event){event.preventDefault();const msg=$('central-rc-message');
  try{
   if(!ui.centralAllowed||!quickEnabled()||ui.busy||!Array.isArray(state.rcHabilitations))throw Error('Administration centrale non autorisée ou référentiel RC indisponible.');
-  const cell=Number($('central-rc-cellule').value),c=(state.cellules||[]).find(x=>Number(x.id)===cell),email=$('central-rc-email').value.trim().toLowerCase();
+  const cell=Number($('central-rc-cellule').value),c=(state.cellules||[]).find(x=>Number(x.id)===cell&&cellActive(x)),email=$('central-rc-email').value.trim().toLowerCase();
   const motif=$('central-rc-motif').value.trim();
   if(!c||!validEmail(email)||motif.length<8||motif.length>500)throw Error('Cellule, adresse RC ou motif incorrect.');
   const debut=isoToEpoch($('central-rc-debut').value),fin=isoToEpoch($('central-rc-fin').value);
@@ -223,6 +281,9 @@ async function revokeCentralHabilitation(h){const msg=$('central-rc-message');
 }
 // V2.7.0 — Le responsable technique peut déléguer la gestion centrale
 // sans céder ses droits Owner Grist. La table des administrateurs est Owner-write.
+// Gestion technique Owner : correction de motif, réactivation, changement d'adresse
+// (avec confirmation forte). Suppression physique volontairement non proposée :
+// une habilitation inactive peut être utile à l'audit des décisions passées.
 function renderCentralAdmins(){
  const panel=$('central-admins-panel'),list=$('central-admins-list'),message=$('central-admins-message');
  panel.hidden=!ui.techOwner;
@@ -230,39 +291,66 @@ function renderCentralAdmins(){
  list.replaceChildren();
  const available=Array.isArray(state.adminsCentraux);
  $('central-admin-save').disabled=ui.busy||!quickEnabled()||!available;
- if(!available){empty(list,'Habilitations des administrateurs centraux inaccessibles. Vérifier la table et les ACL.');return;}
+ if(!available){empty(list,'Habilitations centrales inaccessibles. Vérifier la table et ses ACL.');return;}
  for(const a of state.adminsCentraux){
   const enabled=a.Actif===true&&a.Role==='AN';
   const el=node('div','record'),info=node('span','record-main');
   info.append(node('strong',null,String(a.Email||'')),node('small',null,enabled?'Administration centrale active':'Habilitation inactive'));
   el.append(info);
-  if(enabled){const btn=node('button','btn btn-light','Révoquer');btn.type='button';btn.disabled=ui.busy||!quickEnabled();btn.addEventListener('click',()=>revokeCentralAdmin(a));el.append(btn);}
+  const edit=node('button','btn btn-light','Modifier');edit.type='button';edit.disabled=ui.busy||!quickEnabled();edit.addEventListener('click',()=>editCentralAdmin(a));el.append(edit);
+  const statusBtn=node('button','btn btn-light',enabled?'Désactiver':'Réactiver');statusBtn.type='button';statusBtn.disabled=ui.busy||!quickEnabled();statusBtn.addEventListener('click',()=>setCentralAdminStatus(a,!enabled));el.append(statusBtn);
   list.append(el);
  }
  if(!state.adminsCentraux.length)empty(list,'Aucun administrateur central métier habilité.');
- if(!message.textContent.trim())set(message,'Gestion réservée au propriétaire technique. Aucun droit Owner Grist accordé aux collègues.');
+ if(!message.textContent.trim())set(message,'Owner technique : modifier, désactiver et réactiver les administrateurs. L’historique est préservé (aucune suppression physique).');
+}
+function resetCentralAdminEditor(){
+ $('central-admin-form').reset();$('central-admin-edit-id').value='';
+ set($('central-admin-save'),'Habiliter l’administrateur central');
+ $('central-admin-cancel').hidden=true;
+}
+function editCentralAdmin(a){
+ if(!ui.techOwner||ui.busy)return;
+ $('central-admin-edit-id').value=String(a.id);
+ $('central-admin-email').value=String(a.Email||'');
+ $('central-admin-motif').value=String(a.Motif||'');
+ set($('central-admin-save'),'Enregistrer les modifications');
+ $('central-admin-cancel').hidden=false;
+ $('central-admin-motif').focus();
 }
 async function saveCentralAdmin(event){event.preventDefault();const msg=$('central-admins-message');
  try{
   if(!ui.techOwner||ui.busy||!quickEnabled()||!Array.isArray(state.adminsCentraux))throw Error('Administration technique non autorisée.');
-  const email=$('central-admin-email').value.trim().toLowerCase(),motif=$('central-admin-motif').value.trim();
+  const editId=Number($('central-admin-edit-id').value||0),email=$('central-admin-email').value.trim().toLowerCase(),motif=$('central-admin-motif').value.trim();
   if(!validEmail(email))throw Error('Adresse professionnelle invalide.');
   if(motif.length<8||motif.length>500)throw Error('Motif obligatoire de 8 à 500 caractères.');
-  if(state.adminsCentraux.some(x=>String(x.Email||'').trim().toLowerCase()===email))throw Error('Adresse déjà présente : ne pas créer de doublon. Réactivation à contrôler séparément.');
-  if(!confirm('Accorder le profil administrateur central métier à '+email+' ?'))return;
-  ui.busy=true;
-  await grist.docApi.applyUserActions([['AddRecord',CENTRAL_ADMINS_TABLE,null,{Email:email,Role:'AN',Actif:true,Motif:motif}]]);
-  $('central-admin-form').reset();await reload();set(msg,'Administrateur central habilité. Il doit disposer d’un accès Editor au document Grist et se reconnecter.');
- }catch(e){set(msg,'Habilitation centrale refusée : '+(e?.message||e));}finally{ui.busy=false;renderCentralAdmins();}
+  const before=editId?state.adminsCentraux.find(x=>Number(x.id)===editId):null;
+  if(editId&&!before)throw Error('Habilitation à modifier introuvable.');
+  if(state.adminsCentraux.some(x=>Number(x.id)!==editId&&String(x.Email||'').trim().toLowerCase()===email))throw Error('Adresse déjà présente dans une autre habilitation.');
+  if(before){
+   const oldEmail=String(before.Email||'').trim().toLowerCase();
+   if(oldEmail===email&&String(before.Motif||'')===motif){set(msg,'Aucune modification.');return;}
+   if(!confirm('Modifier l’habilitation de '+oldEmail+' ?'+(oldEmail!==email?' ATTENTION : le changement d’adresse transfère immédiatement le rôle métier à '+email+'.':'')))return;
+   ui.busy=true;
+   await grist.docApi.applyUserActions([['UpdateRecord',CENTRAL_ADMINS_TABLE,editId,{Email:email,Motif:motif}]]);
+  }else{
+   if(!confirm('Accorder le profil administrateur central métier à '+email+' ?'))return;
+   ui.busy=true;
+   await grist.docApi.applyUserActions([['AddRecord',CENTRAL_ADMINS_TABLE,null,{Email:email,Role:'AN',Actif:true,Motif:motif}]]);
+  }
+  resetCentralAdminEditor();await reload();set(msg,before?'Habilitation centrale modifiée. Recontrôler les accès des comptes concernés.':'Administrateur central habilité. Accès Grist Editor requis.');
+ }catch(e){set(msg,'Enregistrement du profil central refusé : '+(e?.message||e));}
+ finally{ui.busy=false;renderCentralAdmins();}
 }
-async function revokeCentralAdmin(row){const msg=$('central-admins-message');
+async function setCentralAdminStatus(row,activate){const msg=$('central-admins-message');
  try{
-  if(!ui.techOwner||ui.busy||!quickEnabled()||!row||row.Actif!==true)throw Error('Révocation centrale non autorisée.');
-  if(!confirm('Désactiver le rôle central de '+row.Email+' ? Les droits devront être contrôlés immédiatement après.'))return;
+  if(!ui.techOwner||ui.busy||!quickEnabled()||!row||row.Role!=='AN')throw Error('Gestion centrale non autorisée.');
+  if(!confirm((activate?'Réactiver':'Désactiver')+' le rôle central de '+row.Email+' ? Les droits seront modifiés immédiatement.'))return;
   ui.busy=true;
-  await grist.docApi.applyUserActions([['UpdateRecord',CENTRAL_ADMINS_TABLE,Number(row.id),{Actif:false}]]);
-  await reload();set(msg,'Habilitation centrale désactivée. Vérifier la perte de droits après actualisation et reconnexion.');
- }catch(e){set(msg,'Révocation centrale refusée : '+(e?.message||e));}finally{ui.busy=false;renderCentralAdmins();}
+  await grist.docApi.applyUserActions([['UpdateRecord',CENTRAL_ADMINS_TABLE,Number(row.id),{Actif:activate}]]);
+  await reload();set(msg,activate?'Habilitation réactivée : vérifier les droits avec le compte concerné.':'Habilitation désactivée : vérifier immédiatement la perte de droits.');
+ }catch(e){set(msg,'Changement de statut refusé : '+(e?.message||e));}
+ finally{ui.busy=false;renderCentralAdmins();}
 }
 function renderRCHabilitations(){
  const box=$('rc-habilitations-panel'),sel=$('rc-hab-cellule'),list=$('rc-habilitations-list'),msg=$('rc-hab-message');
@@ -375,7 +463,7 @@ function authorizedEcCells(){
  const distinctEmails=new Set(active.map(h=>String(h.Email||'').trim().toLowerCase()).filter(Boolean));
  if(distinctEmails.size!==1)return [];
  const ids=new Set(active.map(h=>Number(h.Cellule)));
- return (state.cellules||[]).filter(c=>ids.has(Number(c.id)));
+ return (state.cellules||[]).filter(c=>cellActive(c)&&ids.has(Number(c.id)));
 }
 function initFirstContactChoices(){
  const facts=$('new-faits'),discrim=$('new-discriminations');
@@ -553,6 +641,6 @@ async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=tr
  ui.centralAllowed=ui.techOwner||(Array.isArray(state.adminsCentraux)&&state.adminsCentraux.some(r=>r.Role==='AN'&&r.Actif===true&&Boolean(r.Email)));
 
  refreshCentralNavigation();filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
-function init(){refreshCentralNavigation();if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('rc-habilitation-form').addEventListener('submit',saveRCHabilitation);$('central-rc-form').addEventListener('submit',saveCentralHabilitation);$('central-cellule-form').addEventListener('submit',saveCentralCellule);$('central-admin-form').addEventListener('submit',saveCentralAdmin);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);$('new-dossier-form').addEventListener('submit',saveNewDossier);$('rdv-form').addEventListener('submit',saveRdv);$('rdv-reset').addEventListener('click',resetRdv);$('agenda-mode').addEventListener('change',renderAgenda);$('agenda-date').addEventListener('change',renderAgenda);$('agenda-prev').addEventListener('click',()=>shiftAgenda(-1));$('agenda-next').addEventListener('click',()=>shiftAgenda(1));$('agenda-today').addEventListener('click',()=>{$('agenda-date').value=localDate(new Date());renderAgenda();});$('transfer-form').addEventListener('submit',saveTransfer);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});$('agenda-date').value=localDate(new Date());reload();}
+function init(){refreshCentralNavigation();if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('rc-habilitation-form').addEventListener('submit',saveRCHabilitation);$('central-rc-form').addEventListener('submit',saveCentralHabilitation);$('central-cellule-form').addEventListener('submit',saveCentralCellule);$('central-admin-form').addEventListener('submit',saveCentralAdmin);$('central-admin-cancel').addEventListener('click',resetCentralAdminEditor);$('central-cellule-cancel').addEventListener('click',resetCentralCelluleEditor);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);$('new-dossier-form').addEventListener('submit',saveNewDossier);$('rdv-form').addEventListener('submit',saveRdv);$('rdv-reset').addEventListener('click',resetRdv);$('agenda-mode').addEventListener('change',renderAgenda);$('agenda-date').addEventListener('change',renderAgenda);$('agenda-prev').addEventListener('click',()=>shiftAgenda(-1));$('agenda-next').addEventListener('click',()=>shiftAgenda(1));$('agenda-today').addEventListener('click',()=>{$('agenda-date').value=localDate(new Date());renderAgenda();});$('transfer-form').addEventListener('submit',saveTransfer);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});$('agenda-date').value=localDate(new Date());reload();}
 window.addEventListener('DOMContentLoaded',init);
 })();
