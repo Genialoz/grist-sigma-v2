@@ -5,6 +5,7 @@ const METIER_TABLES={cellules:'SIGMA_CELLULES',habilitations:'SIGMA_V2_EC_HABILI
 const CENTRAL_ACCESS_TABLE='SIGMA_V2_UI_ACCES_CENTRAL_TEST';
 const CENTRAL_ADMINS_TABLE='SIGMA_V2_ADMINS_CENTRAUX_TEST';
 const CELL_ARCHIVE_FIELD='Archivee';
+const CELL_DELETE=window.SigmaCellulesSuppression;
 const cellActive=c=>c&&c[CELL_ARCHIVE_FIELD]!==true;
 const SIGMA_FAITS_TABLE='SIGMA_V2_FAITS_TEST';
 const SIGMA_DISCRIMINATION_TABLE='SIGMA_V2_FAITS_DISCRIMINATION_TEST';
@@ -180,12 +181,17 @@ function renderCentralCellules(){
   info.append(node('strong',null,code||'Code manquant'),node('small',null,(name||'Nom non renseigné')+(cellActive(c)?'':' · ARCHIVÉE')));el.append(info);
   const btn=node('button','btn btn-light','Modifier le nom');btn.type='button';btn.disabled=ui.busy||!quickEnabled();btn.addEventListener('click',()=>editCentralCellule(c));el.append(btn);
   const archive=node('button','btn btn-light',cellActive(c)?'Archiver':'Réactiver');archive.type='button';archive.disabled=ui.busy||!quickEnabled();archive.addEventListener('click',()=>setCelluleArchive(c,cellActive(c)));el.append(archive);
-  // Suppression physique volontairement non proposée : les références peuvent
-  // exister dans des tables sensibles inaccessibles au profil central.
+  // Droit de suppression exclusivement pour l'Owner technique. Un Editor AN
+  // ne peut jamais obtenir D via une condition de dépendances côté widget.
+  if(ui.techOwner){
+   const del=node('button','btn btn-light','Supprimer définitivement');del.type='button';
+   del.disabled=ui.busy||!quickEnabled()||!CELL_DELETE;
+   del.addEventListener('click',()=>deleteCentralCellule(c));el.append(del);
+  }
   list.append(el);
  }
  if(!records.length)empty(list,'Aucune cellule enregistrée.');
- if(!message.textContent.trim())set(message,'Le code d’une cellule est immuable. « Archiver » la retire des nouveaux choix sans supprimer ses dossiers ou habilitations.');
+ if(!message.textContent.trim())set(message,'« Supprimer définitivement » est réservé au compte Owner et uniquement après vérification des dépendances. Sinon, archiver la cellule.');
 }
 async function saveCentralCellule(event){event.preventDefault();const message=$('central-cellules-message');
  try{
@@ -229,6 +235,30 @@ async function setCelluleArchive(c,archive){const message=$('central-cellules-me
   await grist.docApi.applyUserActions([['UpdateRecord',METIER_TABLES.cellules,Number(c.id),{Archivee:archive}]]);
   await reload();set(message,archive?'Cellule archivée sans suppression des données.':'Cellule réactivée.');
  }catch(e){set(message,'Changement de statut refusé : '+(e?.message||e));}
+ finally{ui.busy=false;renderCentralCellules();}
+}
+async function deleteCentralCellule(c){
+ const message=$('central-cellules-message');
+ try{
+  if(!ui.techOwner||!ui.centralAllowed||ui.busy||!quickEnabled()||!CELL_DELETE)
+   throw Error('Suppression physique réservée à l’administration technique (Owner).');
+  if(!c||!Number.isSafeInteger(Number(c.id))||Number(c.id)<=0)throw Error('Cellule invalide.');
+  ui.busy=true;renderCentralCellules();
+  let check;
+  try{check=await CELL_DELETE.verify(grist.docApi,c);}
+  catch(e){throw Error('Contrôle préalable impossible : '+(e?.message||e));}
+  // Confirmation exigeant de recopier le code, pas un simple OK.
+  const typed=prompt('Suppression DÉFINITIVE de « '+check.code+' ».\n'+
+   'Contrôles effectués : '+check.checkedTables+' table(s), '+check.checkedColumns+' colonne(s) de dépendance.\n'+
+   'Cette opération est irréversible et exige un examen des références.\nRecopier exactement le code pour confirmer :','');
+  if(typed===null){set(message,'Suppression annulée.');return;}
+  if(typed.trim()!==check.code)throw Error('Code de confirmation incorrect. Aucune suppression.');
+  // Re-vérification juste avant l’action, réduction (non suppression) de la fenêtre de concurrence.
+  await CELL_DELETE.verify(grist.docApi,c);
+  await grist.docApi.applyUserActions([['RemoveRecord',METIER_TABLES.cellules,Number(c.id)]]);
+  resetCentralCelluleEditor();await reload();
+  set(message,'Cellule '+check.code+' supprimée définitivement dans SIGMA TEST.');
+ }catch(e){set(message,'Suppression refusée : '+(e?.message||e));}
  finally{ui.busy=false;renderCentralCellules();}
 }
 function renderCentralHabilitations(){if(!ui.centralAllowed)return;
