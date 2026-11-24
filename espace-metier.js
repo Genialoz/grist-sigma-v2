@@ -1,6 +1,7 @@
 'use strict';(function(){
 const C=window.SigmaEspaceCore,E=window.SigmaEntretiensCore,$=id=>document.getElementById(id);
-const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null},ui={busy:false,tab:'accueil',selected:null,report:null};
+const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null,rcCibles:null,rcDemandes:null},ui={busy:false,tab:'accueil',selected:null,report:null};
+const RC_TABLES={cibles:"SIGMA_V2_RC_AFFECTATIONS_CIBLES_TEST",demandes:"SIGMA_V2_RC_AFFECTATIONS_DEMANDES_TEST"};
 const val=(v,def='—')=>v===null||v===undefined||v===''?def:String(v);
 function set(el,s){el.textContent=String(s??'');return el;}
 function node(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)set(e,text);return e;}
@@ -96,9 +97,47 @@ function renderRC(){
  const org=$('rc-organisation-link');org.replaceChildren();
  const o=configLink('Organisation et habilitations');if(o)org.append(makeLink('Ouvrir le module organisation',o,'inline-link'));else empty(org,'Module à configurer dans espace-metier-config.js.');
 }
-function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc')renderRC();if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();}
+function renderRCAffectations(){
+ const form=$('rc-affectation-form'),sel=$('rc-cible'),msg=$('rc-affectation-message'),history=$('rc-demandes');
+ const selected=sel.value;sel.replaceChildren(new Option('— Choisir une affectation autorisée —',''));
+ history.replaceChildren();
+ if(state.rc===null||!state.rc.length){form.hidden=true;set(msg,'Espace réservé aux RC disposant d’une synthèse autorisée.');return;}
+ form.hidden=false;
+ if(state.rcCibles===null||state.rcDemandes===null){set(msg,'Tables de demandes indisponibles : import et ACL requis. Aucun droit n’est contourné.');$('rc-affectation-save').disabled=true;empty(history,'Historique indisponible.');return;}
+ const knownCells=new Set(state.rc.map(x=>String(x.Cellule_Code||'').trim()));
+ const candidates=state.rcCibles.filter(x=>x.Eligible===true&&knownCells.has(String(x.Cellule_Code||'').trim())&&Number.isSafeInteger(Number(x.Dossier_ID))&&Number(x.Dossier_ID)>0);
+ for(const x of candidates){sel.add(new Option('Cellule '+x.Cellule_Code+' · '+C.dossierLabel(x.Dossier_ID)+' → '+val(x.EC_Email_Cible),String(x.id)));}
+ if(candidates.some(x=>String(x.id)===selected))sel.value=selected;
+ const can=!!window.SIGMA_ESPACE_CONFIG?.TEST_WRITES_ENABLED&&!ui.busy&&candidates.length>0;
+ $('rc-affectation-save').disabled=!can;sel.disabled=!can;$('rc-motif').disabled=!can;
+ if(!candidates.length)set(msg,'Aucune combinaison autorisée. Owner doit préparer la table des cibles, après contrôle des habilitations.');else if(msg.classList.contains('error')){}else set(msg,'Choisir une proposition. Owner devra ensuite appliquer ou refuser la demande dans le module de gestion existant.');
+ for(const r of [...state.rcDemandes].sort((a,b)=>Number(b.id)-Number(a.id))){
+   const cible=state.rcCibles.find(x=>Number(x.id)===Number(r.Cible));
+   const desc=cible?'Cellule '+cible.Cellule_Code+' · '+C.dossierLabel(cible.Dossier_ID)+' → '+val(cible.EC_Email_Cible):'Cible non accessible (référence #'+val(r.Cible)+')';
+   const wrapper=node('div','record');const left=node('span','record-main');left.append(node('strong',null,'Demande #'+r.id+' · '+desc),node('small',null,'Motif : '+val(r.Motif)+' · Créée par '+val(r.Createur_Email,'non tracé')));const badge=node('span','request-badge '+(r.Statut==='Appliquée'?'done':r.Statut==='Refusée'?'refused':''),val(r.Statut,'En attente'));
+   wrapper.append(left,badge);history.append(wrapper);
+ }
+ if(!state.rcDemandes.length)empty(history,'Aucune demande enregistrée.');
+}
+async function submitRCAffectation(event){event.preventDefault();if(ui.busy)return;
+ const msg=$('rc-affectation-message');msg.classList.remove('error');
+ try{
+  if(!Array.isArray(state.rc)||!state.rc.length||!Array.isArray(state.rcCibles)||!Array.isArray(state.rcDemandes))throw Error('Données RC indisponibles.');
+  if(!window.SIGMA_ESPACE_CONFIG?.TEST_WRITES_ENABLED)throw Error('Écritures de test désactivées.');
+  const id=Number($('rc-cible').value),cible=state.rcCibles.find(x=>Number(x.id)===id);
+  if(!Number.isSafeInteger(id)||id<=0||!cible||cible.Eligible!==true||!state.rc.some(x=>String(x.Cellule_Code||'')===String(cible.Cellule_Code||'')))throw Error('Proposition non autorisée ou expirée.');
+  const motif=$('rc-motif').value.trim();if(motif.length<8||motif.length>500)throw Error('Motif obligatoire entre 8 et 500 caractères.');
+  if(state.rcDemandes.some(r=>Number(r.Cible)===id&&r.Statut==='En attente'))throw Error('Une demande en attente existe déjà pour cette proposition.');
+  const fresh=C.rows(await grist.docApi.fetchTable(RC_TABLES.cibles));if(!fresh.some(x=>Number(x.id)===id&&x.Eligible===true))throw Error('Proposition désactivée entretemps. Actualiser.');
+  if(!confirm('Envoyer cette demande d’affectation ? Le dossier ne sera pas modifié automatiquement.'))return;
+  ui.busy=true;$('rc-affectation-save').disabled=true;
+  await grist.docApi.applyUserActions([['AddRecord',RC_TABLES.demandes,null,{Cible:id,Motif:motif,Action:'Demande',Statut:'En attente'}]]);
+  $('rc-affectation-form').reset();await reload();set(msg,'Demande enregistrée. L’affectation du dossier reste à appliquer par Owner après vérification.');
+ }catch(e){msg.classList.add('error');set(msg,'Demande refusée : '+(e?.message||e));}finally{const message=msg.textContent,wasError=msg.classList.contains('error');ui.busy=false;renderRCAffectations();set(msg,message);msg.classList.toggle('error',wasError);}
+}
+function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc'){renderRC();renderRCAffectations();}if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();}
 function filters(){const select=$('status-filter'),prior=select.value;select.replaceChildren(new Option('Tous les statuts',''));for(const s of [...new Set((state.dossiers||[]).map(d=>String(d.Statut||'Non renseigné')))].sort())select.add(new Option(s,s));select.value=[...select.options].some(x=>x.value===prior)?prior:'';}
-async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=true;status('Actualisation des données autorisées…');try{const results=await Promise.allSettled([...keys.map(k=>grist.docApi.fetchTable(C.TABLES[k])),grist.docApi.fetchTable('SIGMA_V2_RC_SYNTHESE_TEST')]);for(let i=0;i<keys.length;i++){try{state[keys[i]]=results[i].status==='fulfilled'?C.rows(results[i].value):null;}catch{state[keys[i]]=null;}}try{state.rc=results[keys.length].status==='fulfilled'?C.rows(results[keys.length].value):null;}catch{state.rc=null;}filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
-function init(){if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});reload();}
+async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=true;status('Actualisation des données autorisées…');try{const results=await Promise.allSettled([...keys.map(k=>grist.docApi.fetchTable(C.TABLES[k])),grist.docApi.fetchTable('SIGMA_V2_RC_SYNTHESE_TEST'),grist.docApi.fetchTable(RC_TABLES.cibles),grist.docApi.fetchTable(RC_TABLES.demandes)]);for(let i=0;i<keys.length;i++){try{state[keys[i]]=results[i].status==='fulfilled'?C.rows(results[i].value):null;}catch{state[keys[i]]=null;}}try{state.rc=results[keys.length].status==='fulfilled'?C.rows(results[keys.length].value):null;}catch{state.rc=null;}for(const [index,key] of [[keys.length+1,'rcCibles'],[keys.length+2,'rcDemandes']]){try{state[key]=results[index].status==='fulfilled'?C.rows(results[index].value):null;}catch{state[key]=null;}}filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
+function init(){if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});reload();}
 window.addEventListener('DOMContentLoaded',init);
 })();
