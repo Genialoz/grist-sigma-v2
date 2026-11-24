@@ -1,4 +1,4 @@
-/* SIGMA V2.5.1.2 TEST — préparation et révocation interne des comptes rendus.
+/* SIGMA V2.5.1.3 TEST — préparation et révocation interne des comptes rendus.
    Aucun accès externe. Les ACL Grist sont la frontière d'autorisation. */
 (function(root,factory){'use strict';const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.SigmaCRPartagesCore=api;})(typeof window!=='undefined'?window:globalThis,function(){'use strict';
 const TABLES=Object.freeze({cr:'SIGMA_V2_COMPTES_RENDUS_TEST',preps:'SIGMA_V2_CR_PARTAGES_TEST',events:'SIGMA_V2_CR_PARTAGES_REVOCATIONS_TEST'});
@@ -14,9 +14,13 @@ function prepare({crId,recipient,date},crs,preps,events,now=new Date()){
  return {Compte_Rendu:Number(crId),Destinataire_Email:dest,Date_Expiration:ts,Action:'Preparation'};
 }
 function revoke(id,preps,events){
- if(!validId(id))throw Error('Préparation invalide');const p=(preps||[]).find(p=>Number(p.id)===Number(id));if(!p)throw Error('Préparation non accessible');if(isRevoked(p,events))throw Error('Déjà révoqué');if(p.EC_Habilite_ACL!==true)throw Error('Habilitation non valide');if(!validId(p.Compte_Rendu))throw Error('Compte rendu de la préparation introuvable');
- // Le widget transmet les deux références. Grist valide la concordance côté serveur
- // avec Concordance_ACL ; jamais sur la seule confiance accordée au widget.
- return {Preparation:Number(p.id),Compte_Rendu:Number(p.Compte_Rendu),Action:'Revocation'};
+ if(!validId(id))throw Error('Préparation invalide');
+ const p=(preps||[]).find(x=>Number(x.id)===Number(id));
+ if(!p)throw Error('Préparation non accessible');
+ if(isRevoked(p,events))throw Error('Déjà révoqué');
+ if(p.EC_Habilite_ACL!==true)throw Error('Habilitation non valide');
+ // Identique au mécanisme éprouvé du partage des rapports V2.4.1.
+ // Les ACL Grist retrouvent l'EC depuis la référence Preparation.
+ return {Preparation:Number(p.id),Action:'Revocation'};
 }
 return {TABLES,rows,cleanEmail,expiration,state,prepare,revoke};});
