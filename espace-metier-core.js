@@ -1,4 +1,4 @@
-/* SIGMA V2.6.3 TEST — vues métier pures, sans autorisation locale. */
+/* SIGMA V2.6.4 TEST — vues métier pures, sans autorisation locale. */
 (function(root,factory){'use strict';const m=factory();if(typeof module==='object'&&module.exports)module.exports=m;root.SigmaEspaceCore=m;})(typeof window!=='undefined'?window:globalThis,function(){'use strict';
 const TABLES=Object.freeze({dossiers:'SIGMA_V2_DOSSIERS_TEST',entretiens:'SIGMA_V2_ENTRETIENS_TEST',cr:'SIGMA_V2_COMPTES_RENDUS_TEST',rapports:'SIGMA_V2_RAPPORTS_TEST'});
 function rows(x){if(!x||!Array.isArray(x.id))throw Error('Réponse Grist invalide');return x.id.map((id,i)=>Object.fromEntries([['id',id],...Object.entries(x).filter(([k,v])=>k!=='id'&&Array.isArray(v)).map(([k,v])=>[k,v[i]])]));}
