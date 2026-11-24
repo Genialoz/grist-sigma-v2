@@ -1,4 +1,5 @@
-/* SIGMA MVP RC/EC 2.5.1.1 TEST — logique de préparation interne CR, aucune émission externe */
+/* SIGMA V2.5.1.2 TEST — préparation et révocation interne des comptes rendus.
+   Aucun accès externe. Les ACL Grist sont la frontière d'autorisation. */
 (function(root,factory){'use strict';const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.SigmaCRPartagesCore=api;})(typeof window!=='undefined'?window:globalThis,function(){'use strict';
 const TABLES=Object.freeze({cr:'SIGMA_V2_COMPTES_RENDUS_TEST',preps:'SIGMA_V2_CR_PARTAGES_TEST',events:'SIGMA_V2_CR_PARTAGES_REVOCATIONS_TEST'});
 function rows(d){if(Array.isArray(d))return d;if(!d||!Array.isArray(d.id))throw Error('Réponse Grist invalide');return d.id.map((id,i)=>Object.fromEntries([['id',id],...Object.entries(d).filter(([k,v])=>k!=='id'&&Array.isArray(v)).map(([k,v])=>[k,v[i]])]));}
@@ -8,8 +9,14 @@ function expiration(v,now=new Date()){if(!/^\d{4}-\d{2}-\d{2}$/.test(v||''))thro
 function isRevoked(p,events){return (events||[]).some(e=>Number(e.Preparation)===Number(p.id));}
 function state(p,events,now=new Date()){if(isRevoked(p,events))return 'Révoqué';const n=Number(p.Date_Expiration);if(!Number.isFinite(n)||n<=0||n*1000+86400000<=now.getTime())return 'Expiré';return 'Préparé — aucun lien externe';}
 function prepare({crId,recipient,date},crs,preps,events,now=new Date()){
-if(!validId(crId))throw Error('Compte rendu invalide');const cr=(crs||[]).find(c=>Number(c.id)===Number(crId));if(!cr)throw Error('Compte rendu inaccessible');if(cr.Etat!=='Brouillon'||cr.EC_Habilite_ACL!==true)throw Error('Compte rendu sans habilitation valide ou non disponible');
-const dest=cleanEmail(recipient);const ts=expiration(date,now);if((preps||[]).some(p=>Number(p.Compte_Rendu)===Number(crId)&&String(p.Destinataire_Email||'').toLowerCase()===dest&&state(p,events,now)==='Préparé — aucun lien externe'))throw Error('Préparation active déjà présente pour cette version et ce destinataire');
-return {Compte_Rendu:Number(crId),Destinataire_Email:dest,Date_Expiration:ts,Action:'Preparation'};}
-function revoke(id,preps,events){if(!validId(id))throw Error('Préparation invalide');const p=(preps||[]).find(p=>Number(p.id)===Number(id));if(!p)throw Error('Préparation non accessible');if(isRevoked(p,events))throw Error('Déjà révoqué');if(p.EC_Habilite_ACL!==true)throw Error('Habilitation non valide');if(!validId(p.Compte_Rendu))throw Error('Compte rendu de la préparation introuvable');return {Preparation:Number(id),Compte_Rendu:Number(p.Compte_Rendu),Action:'Revocation'};}
+ if(!validId(crId))throw Error('Compte rendu invalide');const cr=(crs||[]).find(c=>Number(c.id)===Number(crId));if(!cr)throw Error('Compte rendu inaccessible');if(cr.Etat!=='Brouillon'||cr.EC_Habilite_ACL!==true)throw Error('Compte rendu sans habilitation valide ou non disponible');
+ const dest=cleanEmail(recipient),ts=expiration(date,now);if((preps||[]).some(p=>Number(p.Compte_Rendu)===Number(crId)&&String(p.Destinataire_Email||'').toLowerCase()===dest&&state(p,events,now)==='Préparé — aucun lien externe'))throw Error('Préparation active déjà présente pour cette version et ce destinataire');
+ return {Compte_Rendu:Number(crId),Destinataire_Email:dest,Date_Expiration:ts,Action:'Preparation'};
+}
+function revoke(id,preps,events){
+ if(!validId(id))throw Error('Préparation invalide');const p=(preps||[]).find(p=>Number(p.id)===Number(id));if(!p)throw Error('Préparation non accessible');if(isRevoked(p,events))throw Error('Déjà révoqué');if(p.EC_Habilite_ACL!==true)throw Error('Habilitation non valide');if(!validId(p.Compte_Rendu))throw Error('Compte rendu de la préparation introuvable');
+ // Le widget transmet les deux références. Grist valide la concordance côté serveur
+ // avec Concordance_ACL ; jamais sur la seule confiance accordée au widget.
+ return {Preparation:Number(p.id),Compte_Rendu:Number(p.Compte_Rendu),Action:'Revocation'};
+}
 return {TABLES,rows,cleanEmail,expiration,state,prepare,revoke};});
