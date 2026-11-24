@@ -1,7 +1,11 @@
 'use strict';(function(){
 const C=window.SigmaEspaceCore,E=window.SigmaEntretiensCore,$=id=>document.getElementById(id);
-const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null,rcCibles:null,rcDemandes:null,cellules:null,habilitations:null,affectations:null,rdv:null,rdvHist:null},ui={busy:false,tab:'accueil',selected:null,report:null};
-const METIER_TABLES={cellules:'SIGMA_CELLULES',habilitations:'SIGMA_V2_EC_HABILITATIONS_TEST',affectations:'SIGMA_V2_AFFECTATIONS_TEST',rdv:'SIGMA_V2_RENDEZ_VOUS_TEST',rdvHist:'SIGMA_V2_RDV_HISTORIQUE_TEST'};
+const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null,rcCibles:null,rcDemandes:null,cellules:null,habilitations:null,affectations:null,rdv:null,rdvHist:null,faits:null,discriminations:null},ui={busy:false,tab:'accueil',selected:null,report:null};
+const METIER_TABLES={cellules:'SIGMA_CELLULES',habilitations:'SIGMA_V2_EC_HABILITATIONS_TEST',affectations:'SIGMA_V2_AFFECTATIONS_TEST',rdv:'SIGMA_V2_RENDEZ_VOUS_TEST',rdvHist:'SIGMA_V2_RDV_HISTORIQUE_TEST',faits:'SIGMA_V2_FAITS_TEST',discriminations:'SIGMA_V2_FAITS_DISCRIMINATION_TEST'};
+const SIGMA_FAITS_TABLE='SIGMA_V2_FAITS_TEST';
+const SIGMA_DISCRIMINATION_TABLE='SIGMA_V2_FAITS_DISCRIMINATION_TEST';
+const MOTIFS=Object.freeze(['Violences physiques','Violences verbales','Discrimination','Harcèlement moral','Agissement sexiste','Violences sexuelles','Violences intrafamiliales','Non précisé','Hors champ']);
+const CRITERES=Object.freeze(['Origine','Sexe','Situation de famille','Grossesse','Apparence physique','Situation économique','État de santé','Handicap','Orientation sexuelle','Identité de genre','Âge','Activités syndicales','Appartenance ethnique','Prétendue race','Religion','Lanceur d’alerte']);
 const RC_TABLES={cibles:"SIGMA_V2_RC_AFFECTATIONS_CIBLES_TEST",demandes:"SIGMA_V2_RC_AFFECTATIONS_DEMANDES_TEST"};
 const val=(v,def='—')=>v===null||v===undefined||v===''?def:String(v);
 function set(el,s){el.textContent=String(s??'');return el;}
@@ -15,7 +19,7 @@ function metric(title,count,detail){const el=node('div','metric');el.append(node
 function nav(tab){ui.tab=tab;for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===tab;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}for(const sec of document.querySelectorAll('.tab'))sec.hidden=sec.id!=='tab-'+tab;const names={accueil:['Vue d’ensemble','Synthèse des informations accessibles'],rc:['Supervision RC','Synthèse non nominative de la cellule autorisée'],dossiers:['Dossiers','Consultation des dossiers et de leurs éléments liés'],entretiens:['Entretiens et comptes rendus','Historique des entretiens et versions accessibles'],rapports:['Rapports internes','Consultation des rapports autorisés, en lecture seule'],outils:['Modules métier','Accéder aux actions disponibles dans SIGMA TEST'],nouveau:['Nouveau signalement','Création EC : attribution par formule Grist'],agenda:['Mon agenda','Rendez-vous liés aux dossiers autorisés']};set($('page-title'),names[tab][0]);set($('page-subtitle'),names[tab][1]);render();}
 function visibleDossiers(){const ds=state.dossiers;if(!Array.isArray(ds))return null;const term=$('search').value.toLocaleLowerCase('fr').trim(),filter=$('status-filter').value;return C.sorted(ds).filter(d=>(!filter||String(d.Statut||'')===filter)&&(!term||[C.dossierLabel(d.id),d.id,d.Statut,d.Canal].map(x=>String(x??'')).join(' ').toLocaleLowerCase('fr').includes(term)));}
 function showDossier(id){const d=(state.dossiers||[]).find(x=>Number(x.id)===Number(id));if(!d)return;ui.selected=d.id;nav('dossiers');renderDetail();$('dossier-detail').scrollIntoView?.({behavior:'smooth',block:'nearest'});}
-// V2.6.4.1 — Affichage des prochains RDV, toujours limité aux dossiers accessibles.
+// V2.6.5 — Affichage des prochains RDV, toujours limité aux dossiers accessibles.
 function renderUpcoming(){
  const root=$('upcoming-rdv');root.replaceChildren();
  if(!Array.isArray(state.dossiers)||!Array.isArray(state.rdv)){
@@ -111,6 +115,41 @@ function renderRC(){
  const org=$('rc-organisation-link');org.replaceChildren();
  const o=configLink('Organisation et habilitations');if(o)org.append(makeLink('Ouvrir le module organisation',o,'inline-link'));else empty(org,'Module à configurer dans espace-metier-config.js.');
 }
+function renderRCHabilitations(){
+ const box=$('rc-habilitations-panel'),sel=$('rc-hab-cellule'),list=$('rc-habilitations-list'),msg=$('rc-hab-message');
+ const cells=(state.cellules||[]).filter(c=>(state.rc||[]).some(r=>String(r.Cellule_Code||'')!==''&&String(r.Cellule_Code)===String(c.Code||'')));
+ box.hidden=!Array.isArray(state.rc)||!state.rc.length;
+ const prev=sel.value;sel.replaceChildren(new Option('— Choisir une cellule gérée —',''));
+ for(const c of cells)sel.add(new Option(cellLabel(c),String(c.id)));
+ if([...sel.options].some(o=>o.value===prev))sel.value=prev;
+ if(cells.length===1)sel.value=String(cells[0].id);
+ $('rc-hab-save').disabled=ui.busy||!cells.length||!Array.isArray(state.habilitations);
+ list.replaceChildren();
+ if(!Array.isArray(state.habilitations)){empty(list,'Référentiel EC inaccessible : les ACL de la table des habilitations doivent être préparées.');return;}
+ const ids=new Set(cells.map(c=>Number(c.id)));
+ const rows=state.habilitations.filter(h=>ids.has(Number(h.Cellule))&&h.Role==='EC');
+ for(const h of rows)list.append(item(String(h.Email||''),cellLabel(state.cellules.find(c=>Number(c.id)===Number(h.Cellule)))+' · '+(h.Actif?'Active':'Inactive'),'EC',null));
+ if(!rows.length)empty(list,'Aucun EC habilité visible pour ces cellules.');
+ if(!cells.length)set(msg,'Aucune cellule de la synthèse RC ne correspond à SIGMA_CELLULES.Code : vérifier les codes, aucune action possible.');
+}
+async function saveRCHabilitation(ev){ev.preventDefault();const msg=$('rc-hab-message');
+ try{
+  if(ui.busy||!Array.isArray(state.habilitations))throw Error('Référentiel ou écriture indisponible.');
+  const cell=Number($('rc-hab-cellule').value),c=state.cellules?.find(x=>Number(x.id)===cell);
+  if(!c||!(state.rc||[]).some(r=>String(r.Cellule_Code||'')===String(c.Code||'')&&String(c.Code||'')!==''))throw Error('Cellule non autorisée dans l’espace RC.');
+  const email=$('rc-hab-email').value.trim().toLowerCase(),motif=$('rc-hab-motif').value.trim();
+  if(!validEmail(email))throw Error('Adresse EC incorrecte.');
+  if(motif.length<8||motif.length>500)throw Error('Motif d’habilitation : 8 à 500 caractères.');
+  const debut=isoToEpoch($('rc-hab-debut').value),fin=isoToEpoch($('rc-hab-fin').value);
+  if(debut&&fin&&debut>fin)throw Error('Date de fin antérieure à la date de début.');
+  if(state.habilitations.some(h=>Number(h.Cellule)===cell&&String(h.Email||'').trim().toLowerCase()===email&&h.Role==='EC'))throw Error('Une habilitation existe déjà pour cet EC dans cette cellule. Ne pas créer de doublon : gérer son renouvellement dans le référentiel.');
+  if(!confirm('Habiliter cet EC dans '+cellLabel(c)+' ? L’opération dépend des ACL Grist côté serveur.'))return;
+  ui.busy=true;$('rc-hab-save').disabled=true;
+  await grist.docApi.applyUserActions([['AddRecord',METIER_TABLES.habilitations,null,{Email:email,Cellule:cell,Role:'EC',Actif:true,Date_Debut:debut,Date_Fin:fin,Motif:motif}]]);
+  $('rc-habilitation-form').reset();await reload();set(msg,'Habilitation créée. Vérifier les droits effectifs de l’EC avec un vrai compte.');
+ }catch(e){set(msg,'Habilitation refusée : '+(e?.message||e));}
+ finally{ui.busy=false;renderRCHabilitations();}
+}
 function renderRCAffectations(){
  const form=$('rc-affectation-form'),sel=$('rc-cible'),msg=$('rc-affectation-message'),history=$('rc-demandes');
  const selected=sel.value;sel.replaceChildren(new Option('— Choisir une affectation autorisée —',''));
@@ -149,31 +188,82 @@ async function submitRCAffectation(event){event.preventDefault();if(ui.busy)retu
   $('rc-affectation-form').reset();await reload();set(msg,'Demande enregistrée. L’affectation du dossier reste à appliquer par Owner après vérification.');
  }catch(e){msg.classList.add('error');set(msg,'Demande refusée : '+(e?.message||e));}finally{const message=msg.textContent,wasError=msg.classList.contains('error');ui.busy=false;renderRCAffectations();set(msg,message);msg.classList.toggle('error',wasError);}
 }
-// V2.6.4 : les ACL Grist restent la seule frontière de sécurité.
+// V2.6.5 : les ACL Grist restent la seule frontière de sécurité.
 function localDate(d){const parts=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')];return parts.join('-');}
 function validEmail(e){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));}
 function cellLabel(c){return String(c?.Nom||c?.Code||('Cellule #'+c?.id));}
+function isoToEpoch(s){if(!s)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(s))throw Error('Date invalide.');const date=new Date(s+'T00:00:00Z');if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==s)throw Error('Date invalide.');return Math.floor(date.getTime()/1000);}
+function authorizedEcCells(){
+ // Aucune liste globale de cellules : uniquement les lignes d'habilitation que les ACL Grist rendent visibles.
+ // Si plusieurs identités EC sont visibles, bloquer plutôt que supposer l'identité de l'utilisateur connecté.
+ const rows=state.habilitations;
+ if(!Array.isArray(rows))return null;
+ const today=Math.floor(Date.now()/86400000)*86400;
+ const active=rows.filter(h=>h.Role==='EC'&&h.Actif===true&&Number.isSafeInteger(Number(h.Cellule))&&Number(h.Cellule)>0&&(!h.Date_Debut||Number(h.Date_Debut)<=today)&&(!h.Date_Fin||Number(h.Date_Fin)>=today));
+ const distinctEmails=new Set(active.map(h=>String(h.Email||'').trim().toLowerCase()).filter(Boolean));
+ if(distinctEmails.size!==1)return [];
+ const ids=new Set(active.map(h=>Number(h.Cellule)));
+ return (state.cellules||[]).filter(c=>ids.has(Number(c.id)));
+}
+function initFirstContactChoices(){
+ const facts=$('new-faits'),discrim=$('new-discriminations');
+ if(facts.children.length)return;
+ for(const [parent,values,name] of [[facts,MOTIFS,'motif'],[discrim,CRITERES,'critere']]){
+  for(const value of values){const label=node('label','check-option');const input=document.createElement('input');input.type='checkbox';input.name=name;input.value=value;label.append(input,node('span',null,value));parent.append(label);}
+ }
+ facts.addEventListener('change',()=>{$('new-discrimination-box').hidden=!([...facts.querySelectorAll('input:checked')].some(x=>x.value==='Discrimination'));});
+}
 function renderNewDossier(){
- const sel=$('new-cellule'),old=sel.value;sel.replaceChildren(new Option('— Choisir une cellule autorisée —',''));
- for(const c of state.cellules||[])sel.add(new Option(cellLabel(c),String(c.id)));
+ initFirstContactChoices();
+ const sel=$('new-cellule'),old=sel.value;sel.replaceChildren(new Option('— Aucune cellule habilitée —',''));
+ const eligible=authorizedEcCells();
+ for(const c of eligible||[])sel.add(new Option(cellLabel(c),String(c.id)));
  if([...sel.options].some(o=>o.value===old))sel.value=old;
- const enabled=quickEnabled()&&Array.isArray(state.cellules)&&state.cellules.length>0&&Array.isArray(state.dossiers)&&!ui.busy;
- for(const id of ['new-date','new-canal','new-cellule','new-save'])$(id).disabled=!enabled;
- if(!enabled)set($('new-message'),'Création indisponible : vérifier SIGMA_CELLULES, les ACL et les écritures TEST.');
+ if(eligible?.length===1)sel.value=String(eligible[0].id);
+ $('new-cellule-wrap').hidden=eligible?.length===1;
+ set($('new-cellule-info'),eligible?.length>1?'Plusieurs habilitations actives : sélectionne la cellule concernée.':'');
+ const enabled=quickEnabled()&&Array.isArray(eligible)&&eligible.length>0&&Array.isArray(state.dossiers)&&Array.isArray(state.faits)&&Array.isArray(state.discriminations)&&!ui.busy;
+ for(const id of ['new-date','new-heure','new-canal','new-cellule','new-auteur','new-objet','new-save'])$(id).disabled=!enabled;
+ if(!enabled)set($('new-message'),'Création indisponible : vérifier les habilitations EC visibles, les ACL et la table SIGMA_V2_FAITS_DISCRIMINATION_TEST. Une seule identité EC doit être visible.');
+}
+function selectedValues(container){return [...$(container).querySelectorAll('input:checked')].map(x=>x.value);}
+function firstContactActions({cell,stamp,heure,canal,auteur,objet,motifs,criteres,commentaire}){
+ if(!Number.isSafeInteger(cell)||cell<1)throw Error('Cellule non autorisée.');
+ if(!['Courriel','Téléphone','Présentiel','Courrier','Formulaire','Autre'].includes(canal))throw Error('Canal invalide.');
+ if(!['Victime','Témoin','Autre'].includes(auteur))throw Error('Auteur du contact obligatoire.');
+ if(!['Signalement','Demande d’écoute','Demande d’information','Demande d’orientation','Autre'].includes(objet))throw Error('Objet initial obligatoire.');
+ if(!motifs.length||motifs.some(x=>!MOTIFS.includes(x)))throw Error('Sélectionner au moins un motif valide.');
+ if(motifs.includes('Non précisé')&&motifs.length>1)throw Error('« Non précisé » doit être choisi seul.');
+ if(motifs.includes('Hors champ')&&motifs.length>1)throw Error('« Hors champ » doit être choisi seul.');
+ if(motifs.includes('Discrimination')&&(!criteres.length||criteres.some(x=>!CRITERES.includes(x))))throw Error('Préciser au moins un critère de discrimination.');
+ if(!motifs.includes('Discrimination')&&criteres.length)throw Error('Critères de discrimination sans motif correspondant.');
+ if(commentaire.length>500)throw Error('Description non nominative limitée à 500 caractères.');
+ if(!Number.isSafeInteger(stamp)||stamp<=0)throw Error('Date invalide.');
+ if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(heure))throw Error('Heure de saisine obligatoire.');
+ const actions=[['AddRecord','SIGMA_V2_DOSSIERS_TEST',-1,{Cellule:cell,Date_Saisine:stamp,Heure_Saisine:heure,Canal:canal,Statut:'Nouveau',Anonyme:true,Auteur_Contact:auteur,Objet_Initial:objet}]];
+ const factIds=new Map();
+ motifs.forEach((motif,index)=>{
+  const factId=-(index+2);factIds.set(motif,factId);
+  actions.push(['AddRecord',SIGMA_FAITS_TABLE,factId,{Dossier:-1,Categorie:motif,Commentaire_Non_Nominatif:commentaire}]);
+ });
+ for(const critere of criteres)actions.push(['AddRecord',SIGMA_DISCRIMINATION_TABLE,null,{Fait:factIds.get('Discrimination'),Critere:critere}]);
+ return actions;
 }
 async function saveNewDossier(ev){ev.preventDefault();const msg=$('new-message');
  try{
-  if(!quickEnabled()||ui.busy||!Array.isArray(state.cellules)||!Array.isArray(state.dossiers))throw Error('Tables ou droits indisponibles.');
-  const cell=Number($('new-cellule').value);if(!Number.isSafeInteger(cell)||!state.cellules.some(c=>Number(c.id)===cell))throw Error('Cellule inaccessible.');
-  const canal=$('new-canal').value,allowed=['Courriel','Téléphone','Présentiel','Courrier','Formulaire','Autre'];if(!allowed.includes(canal))throw Error('Canal invalide.');
-  const ds=$('new-date').value;if(!/^\d{4}-\d{2}-\d{2}$/.test(ds))throw Error('Date de saisine obligatoire.');
-  const time=new Date(ds+'T00:00:00Z');if(!Number.isFinite(time.getTime())||time.toISOString().slice(0,10)!==ds)throw Error('Date invalide.');
-  if(!confirm('Créer un dossier fictif ? Grist attribuera le dossier à l’EC connecté, si l’ACL le permet.'))return;
+  if(!quickEnabled()||ui.busy||!Array.isArray(state.dossiers)||!Array.isArray(state.faits)||!Array.isArray(state.discriminations))throw Error('Tables ou droits indisponibles.');
+  const cell=Number($('new-cellule').value),eligible=authorizedEcCells();
+  if(!Array.isArray(eligible)||!eligible.some(c=>Number(c.id)===cell))throw Error('Cette cellule ne figure pas dans les habilitations EC accessibles.');
+  const actions=firstContactActions({cell,stamp:isoToEpoch($('new-date').value),heure:$('new-heure').value,canal:$('new-canal').value,auteur:$('new-auteur').value,objet:$('new-objet').value,motifs:selectedValues('new-faits'),criteres:selectedValues('new-discriminations'),commentaire:$('new-faits-commentaire').value.trim()});
+  if(!confirm('Créer un dossier TEST et ses '+(actions.filter(a=>a[1]===SIGMA_FAITS_TABLE).length)+' motif(s) ? L’identité EC sera attribuée par Grist.'))return;
   ui.busy=true;$('new-save').disabled=true;
-  // Ne PAS envoyer EC_Email : formule déclenchée Grist = user.Email, non choisie par le widget.
-  await grist.docApi.applyUserActions([['AddRecord','SIGMA_V2_DOSSIERS_TEST',null,{Cellule:cell,Date_Saisine:Math.floor(time.getTime()/1000),Canal:canal,Statut:'Nouveau',Anonyme:true}]]);
-  $('new-dossier-form').reset();await reload();set(msg,'Création envoyée à Grist. Vérifiez le dossier créé et EC_Email (identité authentifiée), avant de poursuivre.');
- }catch(e){set(msg,'Création refusée : '+(e?.message||e));}finally{ui.busy=false;renderNewDossier();}
+  // Transaction unique Grist avec IDs temporaires négatifs : aucune création partielle si l'une des ACL refuse.
+  // Ne transmettre ni EC_Email ni auteur technique : déclenchement côté Grist sous l'identité réelle.
+  await grist.docApi.applyUserActions(actions);
+  $('new-dossier-form').reset();initFirstContactChoices();$('new-discrimination-box').hidden=true;
+  await reload();set(msg,'Dossier et motifs enregistrés ensemble. Vérifier EC_Email et les faits créés en Grist.');
+ }catch(e){set(msg,'Création refusée (aucune ACL ne doit être contournée) : '+(e?.message||e));}
+ finally{ui.busy=false;renderNewDossier();}
 }
 function eligibleTransferEmails(){
  // Le référentiel peut être invisible via ACL. Aucun email inventé ni paramètre de contournement.
@@ -277,9 +367,9 @@ async function saveRdv(ev){ev.preventDefault();const msg=$('rdv-message');
  await grist.docApi.applyUserActions(actions);resetRdv();await reload();set(msg,'Rendez-vous enregistré par Grist.');
  }catch(e){set(msg,'Rendez-vous refusé : '+(e?.message||e));}finally{ui.busy=false;renderAgenda();}
 }
-function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc'){renderRC();renderRCAffectations();}if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();if(ui.tab==='nouveau')renderNewDossier();if(ui.tab==='agenda')renderAgenda();}
+function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc'){renderRC();renderRCHabilitations();renderRCAffectations();}if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();if(ui.tab==='nouveau')renderNewDossier();if(ui.tab==='agenda')renderAgenda();}
 function filters(){const select=$('status-filter'),prior=select.value;select.replaceChildren(new Option('Tous les statuts',''));for(const s of [...new Set((state.dossiers||[]).map(d=>String(d.Statut||'Non renseigné')))].sort())select.add(new Option(s,s));select.value=[...select.options].some(x=>x.value===prior)?prior:'';}
 async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=true;status('Actualisation des données autorisées…');try{const results=await Promise.allSettled([...keys.map(k=>grist.docApi.fetchTable(C.TABLES[k])),grist.docApi.fetchTable('SIGMA_V2_RC_SYNTHESE_TEST'),grist.docApi.fetchTable(RC_TABLES.cibles),grist.docApi.fetchTable(RC_TABLES.demandes),...Object.values(METIER_TABLES).map(t=>grist.docApi.fetchTable(t))]);for(let i=0;i<keys.length;i++){try{state[keys[i]]=results[i].status==='fulfilled'?C.rows(results[i].value):null;}catch{state[keys[i]]=null;}}try{state.rc=results[keys.length].status==='fulfilled'?C.rows(results[keys.length].value):null;}catch{state.rc=null;}for(const [index,key] of [[keys.length+1,'rcCibles'],[keys.length+2,'rcDemandes']]){try{state[key]=results[index].status==='fulfilled'?C.rows(results[index].value):null;}catch{state[key]=null;}}for(const [i,key] of Object.keys(METIER_TABLES).entries()){try{state[key]=results[keys.length+3+i].status==='fulfilled'?C.rows(results[keys.length+3+i].value):null;}catch{state[key]=null;}}filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
-function init(){if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);$('new-dossier-form').addEventListener('submit',saveNewDossier);$('rdv-form').addEventListener('submit',saveRdv);$('rdv-reset').addEventListener('click',resetRdv);$('agenda-mode').addEventListener('change',renderAgenda);$('agenda-date').addEventListener('change',renderAgenda);$('agenda-prev').addEventListener('click',()=>shiftAgenda(-1));$('agenda-next').addEventListener('click',()=>shiftAgenda(1));$('agenda-today').addEventListener('click',()=>{$('agenda-date').value=localDate(new Date());renderAgenda();});$('transfer-form').addEventListener('submit',saveTransfer);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});$('agenda-date').value=localDate(new Date());reload();}
+function init(){if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('rc-habilitation-form').addEventListener('submit',saveRCHabilitation);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);$('new-dossier-form').addEventListener('submit',saveNewDossier);$('rdv-form').addEventListener('submit',saveRdv);$('rdv-reset').addEventListener('click',resetRdv);$('agenda-mode').addEventListener('change',renderAgenda);$('agenda-date').addEventListener('change',renderAgenda);$('agenda-prev').addEventListener('click',()=>shiftAgenda(-1));$('agenda-next').addEventListener('click',()=>shiftAgenda(1));$('agenda-today').addEventListener('click',()=>{$('agenda-date').value=localDate(new Date());renderAgenda();});$('transfer-form').addEventListener('submit',saveTransfer);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});$('agenda-date').value=localDate(new Date());reload();}
 window.addEventListener('DOMContentLoaded',init);
 })();
