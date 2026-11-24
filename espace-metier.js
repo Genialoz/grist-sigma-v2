@@ -1,6 +1,6 @@
 'use strict';(function(){
-const C=window.SigmaEspaceCore,$=id=>document.getElementById(id);
-const state={dossiers:null,entretiens:null,cr:null,rapports:null},ui={tab:'accueil',selected:null,report:null};
+const C=window.SigmaEspaceCore,E=window.SigmaEntretiensCore,$=id=>document.getElementById(id);
+const state={dossiers:null,entretiens:null,cr:null,rapports:null},ui={busy:false,tab:'accueil',selected:null,report:null};
 const val=(v,def='—')=>v===null||v===undefined||v===''?def:String(v);
 function set(el,s){el.textContent=String(s??'');return el;}
 function node(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)set(e,text);return e;}
@@ -22,7 +22,43 @@ function renderDetail(){const section=$('dossier-detail');const d=(state.dossier
 const e=$('dossier-entretiens');e.replaceChildren();if(state.entretiens===null)empty(e,'Entretiens non accessibles.');else if(!related.entretiens.length)empty(e,'Aucun entretien accessible.');else for(const r of C.sorted(related.entretiens))e.append(item('Entretien #'+r.id,'Date : '+C.formatDate(r.Date_Entretien),val(r.Type,'Entretien')));
 const cr=$('dossier-cr');cr.replaceChildren();if(state.cr===null||state.entretiens===null)empty(cr,'Versions de CR non accessibles.');else if(!related.cr.length)empty(cr,'Aucun CR accessible.');else for(const r of [...related.cr].sort((a,b)=>Number(b.Version)-Number(a.Version)))cr.append(item('CR #'+r.id+' · version '+val(r.Version),'Entretien #'+val(r.Entretien),val(r.Etat,'État inconnu')));
 const rs=$('dossier-rapports');rs.replaceChildren();if(state.rapports===null)empty(rs,'Rapports non accessibles.');else if(!related.rapports.length)empty(rs,'Aucun rapport accessible.');else for(const r of [...related.rapports].sort((a,b)=>Number(b.Version)-Number(a.Version)))rs.append(item('Rapport v'+val(r.Version),val(r.Titre,'Sans titre'),val(r.Etat,'État inconnu'),()=>showReport(r.id)));
-const act=$('dossier-actions');act.replaceChildren();for(const title of ['Dossiers et faits','Entretiens et comptes rendus','Préparations et révocations de CR','Rapports internes']){const link=configLink(title);if(link)act.append(makeLink('Ouvrir : '+title,link,'inline-link'));}}
+renderQuickEntry(d,related);const act=$('dossier-actions');act.replaceChildren();for(const title of ['Dossiers et faits','Entretiens et comptes rendus','Préparations et révocations de CR','Rapports internes']){const link=configLink(title);if(link)act.append(makeLink('Ouvrir : '+title,link,'inline-link'));}}
+
+function quickEnabled(){return window.SIGMA_ESPACE_CONFIG?.TEST_WRITES_ENABLED===true && typeof grist!=='undefined' && typeof grist.docApi?.applyUserActions==='function';}
+function quickMessage(message,error=false){const el=$('quick-entry-warning');set(el,message);el.classList.toggle('error',error);}
+function quickBusy(busy){ui.busy=busy;updateQuickControls();}
+function updateQuickControls(){const available=quickEnabled()&&state.dossiers!==null&&state.entretiens!==null&&state.cr!==null&&!ui.busy&&ui.selected!==null;
+ $('quick-e-save').disabled=!available;const selected=Number($('quick-cr-entretien').value);$('quick-cr-save').disabled=!available||!Number.isSafeInteger(selected)||selected<1;
+}
+function renderQuickEntry(d,related){const select=$('quick-cr-entretien');const prior=select.value;select.replaceChildren(new Option('— Choisir un entretien de ce dossier —',''));
+ for(const e of C.sorted(related.entretiens))select.add(new Option('Entretien #'+e.id+' · '+C.formatDate(e.Date_Entretien),String(e.id)));
+ if(related.entretiens.some(e=>String(e.id)===prior))select.value=prior;
+ const enabled=quickEnabled();
+ if(!E){quickMessage('Module de validation entretiens-core.js indisponible. Saisie désactivée.',true);}else if(!enabled){quickMessage('Saisie désactivée. Activer explicitement les écritures TEST dans espace-metier-config.js après vérification des ACL.');}
+ else if(state.entretiens===null||state.cr===null){quickMessage('Tables entretiens ou comptes rendus indisponibles : la saisie est désactivée.',true);}
+ else{quickMessage('Dossier '+C.dossierLabel(d.id)+' · EC affecté : '+val(d.EC_Email,'non renseigné')+'. Toute création reste soumise aux ACL Grist.');}
+ updateQuickControls();quickVersionHint();
+}
+function quickVersionHint(){const id=Number($('quick-cr-entretien').value);const el=$('quick-cr-version');if(!id||!E||!state.cr){set(el,'Sélectionner un entretien pour créer une version.');return;}
+ const v=E.versionState(state.cr,id);set(el,v.duplicateVersions.length?'ALERTE : versions en doublon, ne pas créer de nouvelle version.':'Prochaine version estimée : '+v.nextVersion+' (recontrôlée avant écriture).');}
+async function saveQuickEntretien(ev){ev.preventDefault();if(ui.busy||!quickEnabled()||!E||ui.selected===null)return;
+ const dossier=(state.dossiers||[]).find(d=>Number(d.id)===Number(ui.selected));if(!dossier)return;
+ try{const payload=E.entretien({Dossier:String(dossier.id),Date_Entretien:$('quick-e-date').value,Type:$('quick-e-type').value,Modalite:$('quick-e-modalite').value,Observation_Non_Nominative:$('quick-e-observation').value},state.dossiers);
+ quickBusy(true);quickMessage('Enregistrement de l’entretien…');await grist.docApi.applyUserActions([['AddRecord',E.TABLES.entretiens,null,payload]]);
+ $('quick-entretien').reset();await reload();showDossier(dossier.id);quickMessage('Entretien créé. Identité du créateur et droits à contrôler dans Grist.');
+ }catch(err){quickMessage('Entretien refusé : '+(err?.message||err),true);}finally{quickBusy(false);}}
+async function saveQuickCR(ev){ev.preventDefault();if(ui.busy||!quickEnabled()||!E)return;
+ const entretienId=Number($('quick-cr-entretien').value),e=(state.entretiens||[]).find(e=>Number(e.id)===entretienId);
+ if(!e||!Number.isSafeInteger(entretienId)||entretienId<1||Number(e.Dossier)!==Number(ui.selected)){quickMessage('Entretien non accessible ou ne correspondant pas au dossier.',true);return;}
+ const dossierId=Number(ui.selected);
+ try{if(!Array.isArray(state.cr))throw Error('Comptes rendus non accessibles.');
+ const baseline=E.versionState(state.cr,entretienId).fingerprint;quickBusy(true);quickMessage('Contrôle de la version la plus récente…');
+ const fresh=E.rows(await grist.docApi.fetchTable(E.TABLES.cr));
+ const payload=E.prepareVersion({Entretien:String(entretienId),Texte:$('quick-cr-texte').value},state.entretiens,fresh,baseline);
+ await grist.docApi.applyUserActions([['AddRecord',E.TABLES.cr,null,payload]]);
+ $('quick-cr-texte').value='';await reload();showDossier(dossierId);
+ const verified=E.versionState(state.cr||[],entretienId);quickMessage(verified.duplicateVersions.length?'ALERTE : doublons de versions détectés, suspendre les écritures.':'Compte rendu enregistré en brouillon — version '+payload.Version+'.',!!verified.duplicateVersions.length);
+ }catch(err){quickMessage('Compte rendu refusé : '+(err?.message||err),true);}finally{quickBusy(false);}}
 function renderEntretiens(){const list=$('entretien-list');list.replaceChildren();const arr=state.entretiens;set($('entretien-counter'),arr===null?'Indisponible':arr.length+' entretien(s)');if(arr===null){empty(list,'Entretiens non accessibles.');return;}if(!arr.length){empty(list,'Aucun entretien accessible.');return;}for(const e of C.sorted(arr)){const versions=(state.cr||[]).filter(r=>Number(r.Entretien)===Number(e.id));list.append(item('Entretien #'+e.id+' · '+C.dossierLabel(e.Dossier),'Date : '+C.formatDate(e.Date_Entretien)+' · '+versions.length+' version(s) de CR visible(s)',val(e.Type,'Entretien'),()=>showDossier(e.Dossier)));}}
 function showReport(id){const r=(state.rapports||[]).find(x=>Number(x.id)===Number(id));if(!r)return;ui.report=id;nav('rapports');const detail=$('rapport-detail');detail.hidden=false;set($('rapport-titre'),'Rapport #'+r.id+' · version '+val(r.Version)+' · '+val(r.Titre,'Sans titre'));set($('rapport-texte'),r.Texte||'Aucun contenu accessible.');detail.scrollIntoView?.({behavior:'smooth',block:'nearest'});}
 function renderRapports(){const list=$('rapports-list');list.replaceChildren();const arr=state.rapports;set($('rapport-counter'),arr===null?'Indisponible':arr.length+' rapport(s)');if(arr===null){$('rapport-detail').hidden=true;empty(list,'Rapports non accessibles selon vos habilitations.');return;}if(!arr.length){$('rapport-detail').hidden=true;empty(list,'Aucun rapport accessible.');return;}for(const r of C.sorted(arr))list.append(item('Rapport #'+r.id+' · version '+val(r.Version),C.dossierLabel(r.Dossier)+' · '+val(r.Titre,'Sans titre'),val(r.Etat,'État inconnu'),()=>showReport(r.id)));const selected=arr.find(x=>x.id===ui.report);if(selected){$('rapport-detail').hidden=false;set($('rapport-titre'),'Rapport #'+selected.id+' · version '+val(selected.Version)+' · '+val(selected.Titre,'Sans titre'));set($('rapport-texte'),selected.Texte||'Aucun contenu accessible.');}else $('rapport-detail').hidden=true;}
@@ -32,6 +68,6 @@ function renderTools(){const root=$('module-links');root.replaceChildren();for(c
 function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();}
 function filters(){const select=$('status-filter'),prior=select.value;select.replaceChildren(new Option('Tous les statuts',''));for(const s of [...new Set((state.dossiers||[]).map(d=>String(d.Statut||'Non renseigné')))].sort())select.add(new Option(s,s));select.value=[...select.options].some(x=>x.value===prior)?prior:'';}
 async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=true;status('Actualisation des données autorisées…');try{const results=await Promise.allSettled(keys.map(k=>grist.docApi.fetchTable(C.TABLES[k])));for(let i=0;i<keys.length;i++){try{state[keys[i]]=results[i].status==='fulfilled'?C.rows(results[i].value):null;}catch{state[keys[i]]=null;}}filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
-function init(){if(!C){status('Module de calcul manquant.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'read table'});reload();}
+function init(){if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});reload();}
 window.addEventListener('DOMContentLoaded',init);
 })();

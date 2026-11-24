@@ -1,5 +1,5 @@
-/* SIGMA V2.6.0 TEST. Liens vers les pages Grist TEST existantes : aucun lien PROD, aucun jeton. */
-window.SIGMA_ESPACE_CONFIG=Object.freeze({links:[
+/* SIGMA V2.6.1 TEST. Liens vers les pages Grist TEST existantes : aucun lien PROD, aucun jeton. */
+window.SIGMA_ESPACE_CONFIG=Object.freeze({TEST_WRITES_ENABLED:true,links:[
   {title:'Dossiers et faits',description:'Créer et mettre à jour les dossiers autorisés',url:''},
   {title:'Entretiens et comptes rendus',description:'Saisir les entretiens et préparer les versions de CR',url:''},
   {title:'Préparations et révocations de CR',description:'Préparer et révoquer les consultations internes TEST',url:''},
