@@ -1,7 +1,7 @@
 'use strict';(function(){
 const C=window.SigmaEspaceCore,E=window.SigmaEntretiensCore,$=id=>document.getElementById(id);
-const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null,rcCibles:null,rcDemandes:null,cellules:null,habilitations:null,affectations:null,rdv:null,rdvHist:null,faits:null,discriminations:null},ui={busy:false,tab:'accueil',selected:null,report:null};
-const METIER_TABLES={cellules:'SIGMA_CELLULES',habilitations:'SIGMA_V2_EC_HABILITATIONS_TEST',affectations:'SIGMA_V2_AFFECTATIONS_TEST',rdv:'SIGMA_V2_RENDEZ_VOUS_TEST',rdvHist:'SIGMA_V2_RDV_HISTORIQUE_TEST',faits:'SIGMA_V2_FAITS_TEST',discriminations:'SIGMA_V2_FAITS_DISCRIMINATION_TEST'};
+const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null,rcCibles:null,rcDemandes:null,cellules:null,habilitations:null,affectations:null,rdv:null,rdvHist:null,faits:null,discriminations:null,rcHabilitations:null,habJournal:null},ui={busy:false,tab:'accueil',selected:null,report:null};
+const METIER_TABLES={cellules:'SIGMA_CELLULES',habilitations:'SIGMA_V2_EC_HABILITATIONS_TEST',affectations:'SIGMA_V2_AFFECTATIONS_TEST',rdv:'SIGMA_V2_RENDEZ_VOUS_TEST',rdvHist:'SIGMA_V2_RDV_HISTORIQUE_TEST',faits:'SIGMA_V2_FAITS_TEST',discriminations:'SIGMA_V2_FAITS_DISCRIMINATION_TEST',rcHabilitations:'SIGMA_V2_RC_HABILITATIONS_TEST',habJournal:'SIGMA_V2_HABILITATIONS_JOURNAL_TEST'};
 const SIGMA_FAITS_TABLE='SIGMA_V2_FAITS_TEST';
 const SIGMA_DISCRIMINATION_TABLE='SIGMA_V2_FAITS_DISCRIMINATION_TEST';
 const MOTIFS=Object.freeze(['Violences physiques','Violences verbales','Discrimination','Harcèlement moral','Agissement sexiste','Violences sexuelles','Violences intrafamiliales','Non précisé','Hors champ']);
@@ -115,40 +115,126 @@ function renderRC(){
  const org=$('rc-organisation-link');org.replaceChildren();
  const o=configLink('Organisation et habilitations');if(o)org.append(makeLink('Ouvrir le module organisation',o,'inline-link'));else empty(org,'Module à configurer dans espace-metier-config.js.');
 }
+// V2.6.6 — le référentiel RC est la source de délégation. La synthèse RC ne donne aucun droit.
+function activeHabilitation(row){
+ const today=Math.floor(Date.now()/86400000)*86400;
+ return row&&row.Actif===true&&(!row.Date_Debut||Number(row.Date_Debut)<=today)&&(!row.Date_Fin||Number(row.Date_Fin)>=today);
+}
+function managedRcCells(){
+ if(!Array.isArray(state.rcHabilitations)||!Array.isArray(state.cellules))return [];
+ const active=state.rcHabilitations.filter(h=>h.Role==='RC'&&activeHabilitation(h));
+ const ownerEmailSet=new Set(active.map(x=>String(x.Email||'').trim().toLowerCase()).filter(Boolean));
+ // Un seul compte RC doit être visible via ses ACL. Pour Owner, affichage en consultation;
+ // aucune délégation n'est inférée du rôle Owner dans cette fonction.
+ if(ownerEmailSet.size!==1)return [];
+ const ids=new Set(active.map(x=>Number(x.Cellule)));
+ return state.cellules.filter(c=>ids.has(Number(c.id)));
+}
+function renderCentralHabilitations(){
+ const panel=$('central-habilitations-panel'),msg=$('central-rc-message'),sel=$('central-rc-cellule'),list=$('central-rc-list');
+ const old=sel.value;sel.replaceChildren(new Option('— Choisir une cellule —',''));
+ for(const c of state.cellules||[])sel.add(new Option(cellLabel(c),String(c.id)));
+ if([...sel.options].some(o=>o.value===old))sel.value=old;
+ panel.hidden=!Array.isArray(state.rcHabilitations)||!Array.isArray(state.cellules);
+ $('central-rc-save').disabled=ui.busy||!quickEnabled()||!Array.isArray(state.rcHabilitations)||!Array.isArray(state.cellules);
+ list.replaceChildren();
+ if(!Array.isArray(state.rcHabilitations)){empty(list,'Référentiel RC absent ou non accessible.');return;}
+ for(const r of state.rcHabilitations){
+  const c=(state.cellules||[]).find(c=>Number(c.id)===Number(r.Cellule));
+  const el=node('div','record'),info=node('span','record-main');
+  info.append(node('strong',null,String(r.Email||'')),node('small',null,cellLabel(c)+' · '+(activeHabilitation(r)?'Active':'Inactive')));el.append(info);
+  if(activeHabilitation(r)){const btn=node('button','btn btn-light','Révoquer RC');btn.type='button';btn.disabled=ui.busy||!quickEnabled();btn.addEventListener('click',()=>revokeCentralHabilitation(r));el.append(btn);}
+  list.append(el);
+ }
+ if(!state.rcHabilitations.length)empty(list,'Aucun RC encore habilité.');
+ set(msg,'Administration centrale : seul le rôle Owner peut enregistrer ou modifier ces lignes (ACL Grist).');
+}
+async function saveCentralHabilitation(event){event.preventDefault();const msg=$('central-rc-message');
+ try{
+  if(!quickEnabled()||ui.busy||!Array.isArray(state.rcHabilitations))throw Error('Référentiel RC indisponible.');
+  const cell=Number($('central-rc-cellule').value),c=(state.cellules||[]).find(x=>Number(x.id)===cell),email=$('central-rc-email').value.trim().toLowerCase();
+  const motif=$('central-rc-motif').value.trim();
+  if(!c||!validEmail(email)||motif.length<8||motif.length>500)throw Error('Cellule, adresse RC ou motif incorrect.');
+  const debut=isoToEpoch($('central-rc-debut').value),fin=isoToEpoch($('central-rc-fin').value);
+  if(debut&&fin&&debut>fin)throw Error('Dates incompatibles.');
+  if(state.rcHabilitations.some(h=>Number(h.Cellule)===cell&&h.Role==='RC'&&activeHabilitation(h)))throw Error('Une habilitation RC active existe déjà pour cette cellule : la révoquer d’abord en central.');
+  if(!confirm('Habiliter '+email+' comme RC de '+cellLabel(c)+' ?'))return;
+  ui.busy=true;
+  await grist.docApi.applyUserActions([['AddRecord',METIER_TABLES.rcHabilitations,null,{Email:email,Cellule:cell,Role:'RC',Actif:true,Date_Debut:debut,Date_Fin:fin,Motif:motif}]]);
+  $('central-rc-form').reset();await reload();set(msg,'Habilitation RC créée. Vérifier avec le compte Céline.');
+ }catch(e){set(msg,'Habilitation centrale refusée : '+(e?.message||e));}finally{ui.busy=false;renderCentralHabilitations();}
+}
+async function revokeCentralHabilitation(h){const msg=$('central-rc-message');
+ try{
+  if(ui.busy||!quickEnabled()||!activeHabilitation(h))throw Error('Révocation indisponible.');
+  const motif=prompt('Motif de retrait du rôle RC (8 à 500 caractères) :','Fin de responsabilité sur la cellule');
+  if(motif===null)return;
+  if(motif.trim().length<8||motif.trim().length>500)throw Error('Motif de 8 à 500 caractères obligatoire.');
+  if(!confirm('Révoquer '+h.Email+' ? Le RC ne pourra plus administrer les EC de cette cellule.'))return;
+  ui.busy=true;
+  // Seul Owner a la permission U côté Grist. Le motif est une information UI,
+  // pas un audit serveur ; journal RC immuable à construire avant PROD.
+  await grist.docApi.applyUserActions([['UpdateRecord',METIER_TABLES.rcHabilitations,Number(h.id),{Actif:false,Motif:motif.trim()}]]);
+  await reload();set(msg,'Responsable révoqué. Recontrôler immédiatement les ACL et habilitations EC.');
+ }catch(e){set(msg,'Révocation RC refusée : '+(e?.message||e));}finally{ui.busy=false;renderCentralHabilitations();}
+}
 function renderRCHabilitations(){
  const box=$('rc-habilitations-panel'),sel=$('rc-hab-cellule'),list=$('rc-habilitations-list'),msg=$('rc-hab-message');
- const cells=(state.cellules||[]).filter(c=>(state.rc||[]).some(r=>String(r.Cellule_Code||'')!==''&&String(r.Cellule_Code)===String(c.Code||'')));
- box.hidden=!Array.isArray(state.rc)||!state.rc.length;
+ const cells=managedRcCells();box.hidden=!cells.length;
  const prev=sel.value;sel.replaceChildren(new Option('— Choisir une cellule gérée —',''));
  for(const c of cells)sel.add(new Option(cellLabel(c),String(c.id)));
  if([...sel.options].some(o=>o.value===prev))sel.value=prev;
  if(cells.length===1)sel.value=String(cells[0].id);
- $('rc-hab-save').disabled=ui.busy||!cells.length||!Array.isArray(state.habilitations);
- list.replaceChildren();
- if(!Array.isArray(state.habilitations)){empty(list,'Référentiel EC inaccessible : les ACL de la table des habilitations doivent être préparées.');return;}
+ const enabled=quickEnabled()&&!ui.busy&&cells.length>0&&Array.isArray(state.habilitations)&&Array.isArray(state.habJournal);
+ $('rc-hab-save').disabled=!enabled;list.replaceChildren();
+ if(!Array.isArray(state.habilitations)){empty(list,'Habilitations EC indisponibles : vérifier leur lecture RC en ACL.');return;}
  const ids=new Set(cells.map(c=>Number(c.id)));
  const rows=state.habilitations.filter(h=>ids.has(Number(h.Cellule))&&h.Role==='EC');
- for(const h of rows)list.append(item(String(h.Email||''),cellLabel(state.cellules.find(c=>Number(c.id)===Number(h.Cellule)))+' · '+(h.Actif?'Active':'Inactive'),'EC',null));
- if(!rows.length)empty(list,'Aucun EC habilité visible pour ces cellules.');
- if(!cells.length)set(msg,'Aucune cellule de la synthèse RC ne correspond à SIGMA_CELLULES.Code : vérifier les codes, aucune action possible.');
+ for(const h of rows){
+  const el=node('div','record');const info=node('span','record-main');info.append(node('strong',null,String(h.Email||'')),node('small',null,cellLabel(state.cellules.find(c=>Number(c.id)===Number(h.Cellule)))+' · '+(activeHabilitation(h)?'Active':'Inactive')));el.append(info);
+  if(activeHabilitation(h)){const btn=node('button','btn btn-light','Révoquer');btn.type='button';btn.disabled=!enabled;btn.addEventListener('click',()=>revokeRCHabilitation(h));el.append(btn);}
+  list.append(el);
+ }
+ if(!rows.length)empty(list,'Aucun EC habilité visible dans les cellules gérées.');
+ if(!cells.length)set(msg,'Aucune habilitation RC active et unique : l’administration centrale doit d’abord habiliter le RC.');
 }
 async function saveRCHabilitation(ev){ev.preventDefault();const msg=$('rc-hab-message');
  try{
-  if(ui.busy||!Array.isArray(state.habilitations))throw Error('Référentiel ou écriture indisponible.');
-  const cell=Number($('rc-hab-cellule').value),c=state.cellules?.find(x=>Number(x.id)===cell);
-  if(!c||!(state.rc||[]).some(r=>String(r.Cellule_Code||'')===String(c.Code||'')&&String(c.Code||'')!==''))throw Error('Cellule non autorisée dans l’espace RC.');
+  if(ui.busy||!quickEnabled()||!Array.isArray(state.habilitations)||!Array.isArray(state.habJournal))throw Error('Référentiel, journal ou écriture indisponible.');
+  const cell=Number($('rc-hab-cellule').value),c=managedRcCells().find(x=>Number(x.id)===cell);
+  if(!c)throw Error('Cellule non déléguée au RC.');
   const email=$('rc-hab-email').value.trim().toLowerCase(),motif=$('rc-hab-motif').value.trim();
   if(!validEmail(email))throw Error('Adresse EC incorrecte.');
-  if(motif.length<8||motif.length>500)throw Error('Motif d’habilitation : 8 à 500 caractères.');
+  if(motif.length<8||motif.length>500)throw Error('Motif obligatoire entre 8 et 500 caractères.');
   const debut=isoToEpoch($('rc-hab-debut').value),fin=isoToEpoch($('rc-hab-fin').value);
-  if(debut&&fin&&debut>fin)throw Error('Date de fin antérieure à la date de début.');
-  if(state.habilitations.some(h=>Number(h.Cellule)===cell&&String(h.Email||'').trim().toLowerCase()===email&&h.Role==='EC'))throw Error('Une habilitation existe déjà pour cet EC dans cette cellule. Ne pas créer de doublon : gérer son renouvellement dans le référentiel.');
-  if(!confirm('Habiliter cet EC dans '+cellLabel(c)+' ? L’opération dépend des ACL Grist côté serveur.'))return;
-  ui.busy=true;$('rc-hab-save').disabled=true;
-  await grist.docApi.applyUserActions([['AddRecord',METIER_TABLES.habilitations,null,{Email:email,Cellule:cell,Role:'EC',Actif:true,Date_Debut:debut,Date_Fin:fin,Motif:motif}]]);
-  $('rc-habilitation-form').reset();await reload();set(msg,'Habilitation créée. Vérifier les droits effectifs de l’EC avec un vrai compte.');
+  if(debut&&fin&&debut>fin)throw Error('Date de fin antérieure au début.');
+  if(state.habilitations.some(h=>Number(h.Cellule)===cell&&String(h.Email||'').trim().toLowerCase()===email&&h.Role==='EC'))throw Error('Une habilitation existe déjà pour cet EC et cette cellule. Réactivation à traiter dans une évolution contrôlée.');
+  if(!confirm('Habiliter '+email+' sur '+cellLabel(c)+' ?'))return;
+  ui.busy=true;
+  // Ajout atomique habilitation + événement : référence temporaire Grist.
+  await grist.docApi.applyUserActions([
+   ['AddRecord',METIER_TABLES.habilitations,-1,{Email:email,Cellule:cell,Role:'EC',Actif:true,Date_Debut:debut,Date_Fin:fin,Motif:motif}],
+   ['AddRecord',METIER_TABLES.habJournal,null,{Habilitation:-1,Action:'Creation',Motif:motif,Nouvel_Actif:true}]
+  ]);
+  $('rc-habilitation-form').reset();await reload();set(msg,'Habilitation créée et journalisée. Tester le compte EC authentifié.');
  }catch(e){set(msg,'Habilitation refusée : '+(e?.message||e));}
  finally{ui.busy=false;renderRCHabilitations();}
+}
+async function revokeRCHabilitation(h){const msg=$('rc-hab-message');
+ try{
+  if(ui.busy||!quickEnabled()||!activeHabilitation(h)||!managedRcCells().some(c=>Number(c.id)===Number(h.Cellule)))throw Error('Révocation non autorisée.');
+  const motif=prompt('Motif de révocation (8 à 500 caractères) :','Fin de mission d’écoute');
+  if(motif===null)return;
+  if(motif.trim().length<8||motif.trim().length>500)throw Error('Motif requis entre 8 et 500 caractères.');
+  if(!confirm('Révoquer '+h.Email+' ? Cette action doit couper ses droits sur la cellule.'))return;
+  ui.busy=true;
+  // Le journal widget ne remplace pas une preuve serveur obligatoire d’audit pour PROD.
+  await grist.docApi.applyUserActions([
+   ['UpdateRecord',METIER_TABLES.habilitations,Number(h.id),{Actif:false}],
+   ['AddRecord',METIER_TABLES.habJournal,null,{Habilitation:Number(h.id),Action:'Revocation',Motif:motif.trim(),Ancien_Actif:true,Nouvel_Actif:false}]
+  ]);
+  await reload();set(msg,'Révocation enregistrée. Vérifier immédiatement la disparition des droits EC par API.');
+ }catch(e){set(msg,'Révocation refusée : '+(e?.message||e));}finally{ui.busy=false;renderRCHabilitations();}
 }
 function renderRCAffectations(){
  const form=$('rc-affectation-form'),sel=$('rc-cible'),msg=$('rc-affectation-message'),history=$('rc-demandes');
@@ -367,9 +453,9 @@ async function saveRdv(ev){ev.preventDefault();const msg=$('rdv-message');
  await grist.docApi.applyUserActions(actions);resetRdv();await reload();set(msg,'Rendez-vous enregistré par Grist.');
  }catch(e){set(msg,'Rendez-vous refusé : '+(e?.message||e));}finally{ui.busy=false;renderAgenda();}
 }
-function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc'){renderRC();renderRCHabilitations();renderRCAffectations();}if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();if(ui.tab==='nouveau')renderNewDossier();if(ui.tab==='agenda')renderAgenda();}
+function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc'){renderRC();renderCentralHabilitations();renderRCHabilitations();renderRCAffectations();}if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();if(ui.tab==='nouveau')renderNewDossier();if(ui.tab==='agenda')renderAgenda();}
 function filters(){const select=$('status-filter'),prior=select.value;select.replaceChildren(new Option('Tous les statuts',''));for(const s of [...new Set((state.dossiers||[]).map(d=>String(d.Statut||'Non renseigné')))].sort())select.add(new Option(s,s));select.value=[...select.options].some(x=>x.value===prior)?prior:'';}
 async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=true;status('Actualisation des données autorisées…');try{const results=await Promise.allSettled([...keys.map(k=>grist.docApi.fetchTable(C.TABLES[k])),grist.docApi.fetchTable('SIGMA_V2_RC_SYNTHESE_TEST'),grist.docApi.fetchTable(RC_TABLES.cibles),grist.docApi.fetchTable(RC_TABLES.demandes),...Object.values(METIER_TABLES).map(t=>grist.docApi.fetchTable(t))]);for(let i=0;i<keys.length;i++){try{state[keys[i]]=results[i].status==='fulfilled'?C.rows(results[i].value):null;}catch{state[keys[i]]=null;}}try{state.rc=results[keys.length].status==='fulfilled'?C.rows(results[keys.length].value):null;}catch{state.rc=null;}for(const [index,key] of [[keys.length+1,'rcCibles'],[keys.length+2,'rcDemandes']]){try{state[key]=results[index].status==='fulfilled'?C.rows(results[index].value):null;}catch{state[key]=null;}}for(const [i,key] of Object.keys(METIER_TABLES).entries()){try{state[key]=results[keys.length+3+i].status==='fulfilled'?C.rows(results[keys.length+3+i].value):null;}catch{state[key]=null;}}filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
-function init(){if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('rc-habilitation-form').addEventListener('submit',saveRCHabilitation);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);$('new-dossier-form').addEventListener('submit',saveNewDossier);$('rdv-form').addEventListener('submit',saveRdv);$('rdv-reset').addEventListener('click',resetRdv);$('agenda-mode').addEventListener('change',renderAgenda);$('agenda-date').addEventListener('change',renderAgenda);$('agenda-prev').addEventListener('click',()=>shiftAgenda(-1));$('agenda-next').addEventListener('click',()=>shiftAgenda(1));$('agenda-today').addEventListener('click',()=>{$('agenda-date').value=localDate(new Date());renderAgenda();});$('transfer-form').addEventListener('submit',saveTransfer);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});$('agenda-date').value=localDate(new Date());reload();}
+function init(){if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('rc-habilitation-form').addEventListener('submit',saveRCHabilitation);$('central-rc-form').addEventListener('submit',saveCentralHabilitation);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);$('new-dossier-form').addEventListener('submit',saveNewDossier);$('rdv-form').addEventListener('submit',saveRdv);$('rdv-reset').addEventListener('click',resetRdv);$('agenda-mode').addEventListener('change',renderAgenda);$('agenda-date').addEventListener('change',renderAgenda);$('agenda-prev').addEventListener('click',()=>shiftAgenda(-1));$('agenda-next').addEventListener('click',()=>shiftAgenda(1));$('agenda-today').addEventListener('click',()=>{$('agenda-date').value=localDate(new Date());renderAgenda();});$('transfer-form').addEventListener('submit',saveTransfer);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});$('agenda-date').value=localDate(new Date());reload();}
 window.addEventListener('DOMContentLoaded',init);
 })();

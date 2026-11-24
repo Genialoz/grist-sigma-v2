@@ -29,6 +29,6 @@
 #agenda-list{margin-top:14px}.sigma-form button:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:740px){.sigma-form{grid-template-columns:1fr}.sigma-form .wide,.sigma-form>.btn,.sigma-form>.form-actions{grid-column:auto}}
 
-/* V2.6.5 — champs à choix multiples */
+/* V2.6.6 — champs à choix multiples */
 .motif-fieldset{border:1px solid var(--border,#d7dfe8);border-radius:12px;padding:14px;min-width:0}.motif-fieldset legend{font-weight:700;padding:0 6px}.check-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:8px}.check-option{display:flex;align-items:center;gap:10px;border:1px solid var(--border,#d7dfe8);border-radius:9px;padding:9px 10px;cursor:pointer}.check-option input{width:17px;height:17px;flex-shrink:0}.check-option:has(input:checked){background:rgba(45,115,190,.07);border-color:#5791c5}.sigma-form .wide{grid-column:1/-1}
 [hidden]{display:none!important}
