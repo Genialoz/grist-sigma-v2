@@ -143,6 +143,36 @@ function managedRcCells(){
  const ids=new Set(active.map(x=>Number(x.Cellule)));
  return state.cellules.filter(c=>ids.has(Number(c.id)));
 }
+// V2.6.9 — création contrôlée d'une cellule par l'administration centrale.
+// Le widget ne transmet que Code/Nom ; l'ACL Grist sur SIGMA_CELLULES reste obligatoire.
+function renderCentralCellules(){
+ const panel=$('central-cellules-panel'),list=$('central-cellules-list'),message=$('central-cellules-message');
+ panel.hidden=!ui.centralAllowed;
+ if(!ui.centralAllowed)return;
+ const available=Array.isArray(state.cellules);
+ $('central-cellule-save').disabled=ui.busy||!quickEnabled()||!available;
+ list.replaceChildren();
+ if(!available){empty(list,'Table SIGMA_CELLULES non accessible. Vérifier les ACL Owner et son existence.');return;}
+ const records=[...state.cellules].sort((a,b)=>String(a.Code||'').localeCompare(String(b.Code||''),'fr'));
+ for(const c of records){const code=String(c.Code||''),name=String(c.Nom||'');list.append(item(code||'Code manquant',name||'Nom non renseigné','Cellule'));}
+ if(!records.length)empty(list,'Aucune cellule enregistrée.');
+ if(!message.textContent.trim())set(message,'Création de cellules réservée à l’administration centrale. Les codes sont uniques et ne doivent pas être réutilisés.');
+}
+async function saveCentralCellule(event){event.preventDefault();const message=$('central-cellules-message');
+ try{
+  if(!ui.centralAllowed||ui.busy||!quickEnabled()||!Array.isArray(state.cellules))throw Error('Création centrale non autorisée ou référentiel cellules inaccessible.');
+  const code=$('central-cellule-code').value.trim().toUpperCase();
+  const nom=$('central-cellule-nom').value.trim();
+  if(!/^[A-Z][A-Z0-9_\-]{1,39}$/.test(code))throw Error('Code : 2 à 40 caractères, lettres A-Z, chiffres, _ ou -, débutant par une lettre.');
+  if(nom.length<3||nom.length>150)throw Error('Nom : entre 3 et 150 caractères.');
+  if(state.cellules.some(c=>String(c.Code||'').trim().toUpperCase()===code))throw Error('Une cellule porte déjà ce code.');
+  if(!confirm('Créer la cellule « '+code+' — '+nom+' » dans SIGMA TEST ?'))return;
+  ui.busy=true;$('central-cellule-save').disabled=true;
+  await grist.docApi.applyUserActions([['AddRecord',METIER_TABLES.cellules,null,{Code:code,Nom:nom}]]);
+  $('central-cellule-form').reset();await reload();set(message,'Cellule créée dans SIGMA_CELLULES. Elle est désormais disponible dans la liste d’habilitation RC.');
+ }catch(e){set(message,'Création de cellule refusée : '+(e?.message||e));}
+ finally{ui.busy=false;renderCentralCellules();}
+}
 function renderCentralHabilitations(){if(!ui.centralAllowed)return;
  const panel=$('central-habilitations-panel'),msg=$('central-rc-message'),sel=$('central-rc-cellule'),list=$('central-rc-list');
  const old=sel.value;sel.replaceChildren(new Option('— Choisir une cellule —',''));
@@ -466,7 +496,7 @@ async function saveRdv(ev){ev.preventDefault();const msg=$('rdv-message');
  await grist.docApi.applyUserActions(actions);resetRdv();await reload();set(msg,'Rendez-vous enregistré par Grist.');
  }catch(e){set(msg,'Rendez-vous refusé : '+(e?.message||e));}finally{ui.busy=false;renderAgenda();}
 }
-function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc'){renderRC();renderRCAffectations();}if(ui.tab==='administration')renderCentralHabilitations();if(ui.tab==='gestion-ec')renderRCHabilitations();if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();if(ui.tab==='nouveau')renderNewDossier();if(ui.tab==='agenda')renderAgenda();}
+function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc'){renderRC();renderRCAffectations();}if(ui.tab==='administration'){renderCentralCellules();renderCentralHabilitations();}if(ui.tab==='gestion-ec')renderRCHabilitations();if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();if(ui.tab==='nouveau')renderNewDossier();if(ui.tab==='agenda')renderAgenda();}
 function filters(){const select=$('status-filter'),prior=select.value;select.replaceChildren(new Option('Tous les statuts',''));for(const s of [...new Set((state.dossiers||[]).map(d=>String(d.Statut||'Non renseigné')))].sort())select.add(new Option(s,s));select.value=[...select.options].some(x=>x.value===prior)?prior:'';}
 async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=true;status('Actualisation des données autorisées…');try{const results=await Promise.allSettled([...keys.map(k=>grist.docApi.fetchTable(C.TABLES[k])),grist.docApi.fetchTable('SIGMA_V2_RC_SYNTHESE_TEST'),grist.docApi.fetchTable(RC_TABLES.cibles),grist.docApi.fetchTable(RC_TABLES.demandes),...Object.values(METIER_TABLES).map(t=>grist.docApi.fetchTable(t)),grist.docApi.fetchTable(CENTRAL_ACCESS_TABLE)]);for(let i=0;i<keys.length;i++){try{state[keys[i]]=results[i].status==='fulfilled'?C.rows(results[i].value):null;}catch{state[keys[i]]=null;}}try{state.rc=results[keys.length].status==='fulfilled'?C.rows(results[keys.length].value):null;}catch{state.rc=null;}for(const [index,key] of [[keys.length+1,'rcCibles'],[keys.length+2,'rcDemandes']]){try{state[key]=results[index].status==='fulfilled'?C.rows(results[index].value):null;}catch{state[key]=null;}}for(const [i,key] of Object.keys(METIER_TABLES).entries()){try{state[key]=results[keys.length+3+i].status==='fulfilled'?C.rows(results[keys.length+3+i].value):null;}catch{state[key]=null;}}// Refus, table absente ou témoin absent => menu central invisible (fail closed).
  const accessResult=results[results.length-1];
@@ -475,6 +505,6 @@ async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=tr
    try{ui.centralAllowed=C.rows(accessResult.value).some(r=>r.Autorisation==='ADMIN_CENTRAL');}catch{ui.centralAllowed=false;}
  }
  refreshCentralNavigation();filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
-function init(){refreshCentralNavigation();if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('rc-habilitation-form').addEventListener('submit',saveRCHabilitation);$('central-rc-form').addEventListener('submit',saveCentralHabilitation);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);$('new-dossier-form').addEventListener('submit',saveNewDossier);$('rdv-form').addEventListener('submit',saveRdv);$('rdv-reset').addEventListener('click',resetRdv);$('agenda-mode').addEventListener('change',renderAgenda);$('agenda-date').addEventListener('change',renderAgenda);$('agenda-prev').addEventListener('click',()=>shiftAgenda(-1));$('agenda-next').addEventListener('click',()=>shiftAgenda(1));$('agenda-today').addEventListener('click',()=>{$('agenda-date').value=localDate(new Date());renderAgenda();});$('transfer-form').addEventListener('submit',saveTransfer);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});$('agenda-date').value=localDate(new Date());reload();}
+function init(){refreshCentralNavigation();if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('rc-affectation-form').addEventListener('submit',submitRCAffectation);$('rc-habilitation-form').addEventListener('submit',saveRCHabilitation);$('central-rc-form').addEventListener('submit',saveCentralHabilitation);$('central-cellule-form').addEventListener('submit',saveCentralCellule);$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);$('new-dossier-form').addEventListener('submit',saveNewDossier);$('rdv-form').addEventListener('submit',saveRdv);$('rdv-reset').addEventListener('click',resetRdv);$('agenda-mode').addEventListener('change',renderAgenda);$('agenda-date').addEventListener('change',renderAgenda);$('agenda-prev').addEventListener('click',()=>shiftAgenda(-1));$('agenda-next').addEventListener('click',()=>shiftAgenda(1));$('agenda-today').addEventListener('click',()=>{$('agenda-date').value=localDate(new Date());renderAgenda();});$('transfer-form').addEventListener('submit',saveTransfer);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});$('agenda-date').value=localDate(new Date());reload();}
 window.addEventListener('DOMContentLoaded',init);
 })();
