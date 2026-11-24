@@ -1,14 +1,15 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SIGMA — Espace métier RC / EC · TEST</title>
-<link rel="stylesheet" href="espace-metier.css?v=2.6.1">
+<link rel="stylesheet" href="espace-metier.css?v=2.6.2">
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
-<script defer src="espace-metier-config.js?v=2.6.1"></script>
-<script defer src="espace-metier-core.js?v=2.6.1"></script>
+<script defer src="espace-metier-config.js?v=2.6.2"></script>
+<script defer src="espace-metier-core.js?v=2.6.2"></script>
 <script defer src="entretiens-core.js?v=2.3.1"></script>
-<script defer src="espace-metier.js?v=2.6.1"></script></head>
-<body><div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark">Σ</span><span>SIGMA<small>V2.6.1 · TEST</small></span></div><p class="side-caption">ESPACE MÉTIER RC / EC</p>
+<script defer src="espace-metier.js?v=2.6.2"></script></head>
+<body><div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark">Σ</span><span>SIGMA<small>V2.6.2 · TEST</small></span></div><p class="side-caption">ESPACE MÉTIER RC / EC</p>
 <nav id="nav" aria-label="Navigation principale">
 <button type="button" class="navitem active" data-tab="accueil" aria-current="page">Vue d’ensemble</button>
+<button type="button" class="navitem" data-tab="rc">Supervision RC</button>
 <button type="button" class="navitem" data-tab="dossiers">Dossiers</button>
 <button type="button" class="navitem" data-tab="entretiens">Entretiens &amp; CR</button>
 <button type="button" class="navitem" data-tab="rapports">Rapports internes</button>
@@ -17,6 +18,14 @@
 <main class="main"><header class="topbar"><div><p class="eyebrow">SIGMA / TEST / RC &amp; EC</p><h1 id="page-title">Vue d’ensemble</h1><p id="page-subtitle" class="muted">Synthèse des éléments autorisés pour votre compte</p></div><button type="button" id="reload" class="btn refresh">↻ Actualiser</button></header>
 <div id="status" class="status" role="status" aria-live="polite">Chargement en cours…</div>
 <section id="tab-accueil" class="tab" aria-label="Vue d’ensemble"><div class="metrics" id="metrics"></div><div class="twocol"><section class="panel"><div class="panel-head"><h2>Dossiers récents</h2><button type="button" class="text-action" data-goto="dossiers">Voir les dossiers</button></div><div id="recent-dossiers"></div></section><section class="panel"><h2>Avancement des dossiers accessibles</h2><div id="status-stats"></div><p class="hint">Ces chiffres portent uniquement sur les enregistrements autorisés, pas sur l’ensemble de la cellule ou de l’académie.</p></section></div><section class="panel"><h2>Parcours de traitement</h2><div class="workflow"><span>1 · Dossier</span><span>2 · Entretien</span><span>3 · Compte rendu</span><span>4 · Accord déclarant</span><span>5 · Rapport interne</span></div><p class="hint">La validation par le déclarant n’est pas encore raccordée à un portail sécurisé. Aucun droit RC n’est ouvert automatiquement.</p></section></section>
+<section id="tab-rc" class="tab" hidden aria-label="Supervision du responsable de cellule">
+<section class="panel rc-intro"><div class="panel-head"><div><h2>Tableau de bord de ma cellule</h2><p class="hint">Synthèse non nominative publiée par une personne habilitée. Les chiffres ne sont pas calculés dans le navigateur à partir des dossiers.</p></div><span class="counter">LECTURE SEULE · TEST</span></div>
+<p class="inline-note">Cette vue RC n’ouvre aucun accès aux récits, comptes rendus ou dossiers individuels. La visibilité de chaque synthèse est contrôlée dans Grist, notamment par l’adresse professionnelle RC autorisée.</p>
+<div id="rc-feedback" class="rc-feedback" role="status" aria-live="polite"></div><div id="rc-syntheses" class="rc-syntheses"></div>
+</section>
+<section class="panel"><h2>Mes missions de responsable de cellule</h2><div class="rc-actions"><div><strong>Suivre la charge de la cellule</strong><p class="hint">Avancement et volumes non nominatifs, selon la dernière synthèse validée.</p></div><div><strong>Organiser les affectations</strong><p class="hint">Les modifications restent dans le module de dossiers et selon les droits Grist existants. L’écriture RC n’est pas encore ouverte.</p><div id="rc-assignment-link"></div></div><div><strong>Gérer les habilitations</strong><p class="hint">Consulter le module d’organisation ; aucune habilitation n’est créée depuis cet écran.</p><div id="rc-organisation-link"></div></div></div></section>
+<section class="panel"><h2>Précautions avant le pilote</h2><p class="hint">L’inscription d’un courriel dans la synthèse RC doit être effectuée par Owner après vérification de son habilitation et de sa cellule. Cette version ne remplace ni le contrôle de rôle RC ni la séparation multi-académies prévue pour décembre.</p></section>
+</section>
 <section id="tab-dossiers" class="tab" hidden><section class="panel"><div class="panel-head"><div><h2>Dossiers accessibles</h2><p class="hint">Sélectionnez une ligne pour consulter son activité associée.</p></div><span id="dossier-counter" class="counter"></span></div><div class="filters"><label class="field">Rechercher un dossier<input type="search" id="search" placeholder="Numéro, statut, canal…"></label><label class="field">Filtrer par statut<select id="status-filter"><option value="">Tous les statuts</option></select></label></div><div id="dossiers" class="record-list"></div></section><section id="dossier-detail" class="panel detail" hidden><div class="panel-head"><div><p class="eyebrow">FICHE DOSSIER</p><h2 id="dossier-title"></h2></div><button type="button" id="close-detail" class="btn btn-light">Fermer</button></div><div id="dossier-meta" class="properties"></div><div class="detail-columns"><div><h3>Entretiens</h3><div id="dossier-entretiens"></div><h3>Versions de compte rendu</h3><div id="dossier-cr"></div></div><div><h3>Rapports</h3><div id="dossier-rapports"></div><p class="hint">Pour créer ou modifier, utilisez les modules métier : ils conservent leurs contrôles et leurs ACL.</p><div id="dossier-actions"></div>
 <section class="quick-entry" id="quick-entry" aria-labelledby="quick-entry-title">
 <h3 id="quick-entry-title">Saisie rapide de l'écoutant · TEST</h3>

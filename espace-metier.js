@@ -1,6 +1,6 @@
 'use strict';(function(){
 const C=window.SigmaEspaceCore,E=window.SigmaEntretiensCore,$=id=>document.getElementById(id);
-const state={dossiers:null,entretiens:null,cr:null,rapports:null},ui={busy:false,tab:'accueil',selected:null,report:null};
+const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null},ui={busy:false,tab:'accueil',selected:null,report:null};
 const val=(v,def='—')=>v===null||v===undefined||v===''?def:String(v);
 function set(el,s){el.textContent=String(s??'');return el;}
 function node(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)set(e,text);return e;}
@@ -10,7 +10,7 @@ function chip(s){const a=node('span','chip',s);if(s==='Nouveau')a.classList.add(
 function item(title,desc,badge,action){const el=document.createElement(action?'button':'div');el.className='record'+(action?' actionable':'');if(action){el.type='button';el.addEventListener('click',action);}const left=node('span','record-main');left.append(node('strong',null,title),node('small',null,desc));el.append(left);if(badge){const right=node('span','record-aside');right.append(chip(badge));el.append(right);}return el;}
 function count(data,key){return Array.isArray(data[key])?String(data[key].length):'—';}
 function metric(title,count,detail){const el=node('div','metric');el.append(node('span','label',title),node('strong',null,count),node('small',null,detail));return el;}
-function nav(tab){ui.tab=tab;for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===tab;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}for(const sec of document.querySelectorAll('.tab'))sec.hidden=sec.id!=='tab-'+tab;const names={accueil:['Vue d’ensemble','Synthèse des informations accessibles'],dossiers:['Dossiers','Consultation des dossiers et de leurs éléments liés'],entretiens:['Entretiens et comptes rendus','Historique des entretiens et versions accessibles'],rapports:['Rapports internes','Consultation des rapports autorisés, en lecture seule'],outils:['Modules métier','Accéder aux actions disponibles dans SIGMA TEST']};set($('page-title'),names[tab][0]);set($('page-subtitle'),names[tab][1]);render();}
+function nav(tab){ui.tab=tab;for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===tab;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}for(const sec of document.querySelectorAll('.tab'))sec.hidden=sec.id!=='tab-'+tab;const names={accueil:['Vue d’ensemble','Synthèse des informations accessibles'],rc:['Supervision RC','Synthèse non nominative de la cellule autorisée'],dossiers:['Dossiers','Consultation des dossiers et de leurs éléments liés'],entretiens:['Entretiens et comptes rendus','Historique des entretiens et versions accessibles'],rapports:['Rapports internes','Consultation des rapports autorisés, en lecture seule'],outils:['Modules métier','Accéder aux actions disponibles dans SIGMA TEST']};set($('page-title'),names[tab][0]);set($('page-subtitle'),names[tab][1]);render();}
 function visibleDossiers(){const ds=state.dossiers;if(!Array.isArray(ds))return null;const term=$('search').value.toLocaleLowerCase('fr').trim(),filter=$('status-filter').value;return C.sorted(ds).filter(d=>(!filter||String(d.Statut||'')===filter)&&(!term||[C.dossierLabel(d.id),d.id,d.Statut,d.Canal].map(x=>String(x??'')).join(' ').toLocaleLowerCase('fr').includes(term)));}
 function showDossier(id){const d=(state.dossiers||[]).find(x=>Number(x.id)===Number(id));if(!d)return;ui.selected=d.id;nav('dossiers');renderDetail();$('dossier-detail').scrollIntoView?.({behavior:'smooth',block:'nearest'});}
 function renderHome(){const m=$('metrics');m.replaceChildren();m.append(metric('Dossiers',count(state,'dossiers'),'Autorisés'),metric('Entretiens',count(state,'entretiens'),'Accessibles'),metric('Comptes rendus',count(state,'cr'),'Versions visibles'),metric('Rapports',count(state,'rapports'),'Internes visibles'));
@@ -65,9 +65,40 @@ function renderRapports(){const list=$('rapports-list');list.replaceChildren();c
 function configLink(title){const x=(window.SIGMA_ESPACE_CONFIG?.links||[]).find(x=>x.title===title);if(!x||typeof x.url!=='string')return null;try{const u=new URL(x.url);return u.protocol==='https:'?u.href:null;}catch{return null;}}
 function makeLink(title,url,cls){const a=node('a',cls,title);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
 function renderTools(){const root=$('module-links');root.replaceChildren();for(const l of window.SIGMA_ESPACE_CONFIG?.links||[]){const url=configLink(l.title);const card=url?makeLink('',url,'tool'):node('div','tool unconfigured');card.append(node('strong',null,l.title),node('small',null,l.description||''),node('small',null,url?'Ouvrir le module ↗':'Lien non configuré dans espace-metier-config.js'));root.append(card);}if(!root.childNodes.length)empty(root,'Aucun module configuré.');}
-function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();}
+function positiveCount(value){const n=Number(value);return Number.isSafeInteger(n)&&n>=0?n:null;}
+function renderRC(){
+ const root=$('rc-syntheses'),feedback=$('rc-feedback');root.replaceChildren();feedback.replaceChildren();
+ const rows=state.rc;
+ if(rows===null){empty(feedback,'Synthèses RC indisponibles ou interdites par les ACL. Importer et sécuriser SIGMA_V2_RC_SYNTHESE_TEST avant d’activer ce module pour les collègues.');return;}
+ if(!rows.length){empty(feedback,'Aucune synthèse RC autorisée. Owner doit créer une ligne TEST avec le courriel du responsable habilité, sans données nominatives.');return;}
+ // Les ACL Grist sont seules responsables du filtrage ; le navigateur ne sélectionne pas d’utilisateur à partir d’un paramètre d’URL.
+ const unique=new Set();
+ for(const r of [...rows].sort((a,b)=>Number(b.Date_MAJ||0)-Number(a.Date_MAJ||0))){
+  const ident=String(r.Cellule_Code||'').trim();
+  if(!ident||unique.has(ident))continue;unique.add(ident);
+  const card=node('section','rc-cell');
+  const title=node('h3',null,'Cellule '+ident);
+  const last=node('p','hint','Situation déclarée au '+C.formatDate(r.Date_MAJ)+' · données TEST renseignées et vérifiées par Owner');
+  card.append(title,last);
+  const fields=[['Dossiers suivis','Nb_Dossiers'],['Nouveaux','Nb_Nouveaux'],['En cours','Nb_En_Cours'],['Clôturés','Nb_Clotures'],['Sans EC désigné','Nb_Sans_EC']];
+  const metrics=node('div','rc-metrics');
+  for(const [label,key] of fields){const count=positiveCount(r[key]);metrics.append(metric(label,count===null?'—':String(count),'Synthèse autorisée'));}
+  card.append(metrics);
+  const numbers=fields.map(([,key])=>positiveCount(r[key]));
+  if(numbers[0]!==null&&numbers.slice(1,4).every(x=>x!==null)&&numbers.slice(1,4).reduce((a,v)=>a+v,0)!==numbers[0]){
+   card.append(node('p','rc-alert','Attention : le total ne correspond pas à la somme des statuts ; vérifier la synthèse avant diffusion.'));
+  }
+  root.append(card);
+ }
+ if(!root.childNodes.length)empty(feedback,'Synthèse vide ou invalide. Vérifier le code de cellule.');
+ const assign=$('rc-assignment-link');assign.replaceChildren();
+ const a=configLink('Dossiers et faits');if(a)assign.append(makeLink('Ouvrir le module des dossiers',a,'inline-link'));else empty(assign,'Module à configurer dans espace-metier-config.js.');
+ const org=$('rc-organisation-link');org.replaceChildren();
+ const o=configLink('Organisation et habilitations');if(o)org.append(makeLink('Ouvrir le module organisation',o,'inline-link'));else empty(org,'Module à configurer dans espace-metier-config.js.');
+}
+function render(){if(ui.tab==='accueil')renderHome();if(ui.tab==='rc')renderRC();if(ui.tab==='dossiers')renderDossiers();if(ui.tab==='entretiens')renderEntretiens();if(ui.tab==='rapports')renderRapports();if(ui.tab==='outils')renderTools();}
 function filters(){const select=$('status-filter'),prior=select.value;select.replaceChildren(new Option('Tous les statuts',''));for(const s of [...new Set((state.dossiers||[]).map(d=>String(d.Statut||'Non renseigné')))].sort())select.add(new Option(s,s));select.value=[...select.options].some(x=>x.value===prior)?prior:'';}
-async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=true;status('Actualisation des données autorisées…');try{const results=await Promise.allSettled(keys.map(k=>grist.docApi.fetchTable(C.TABLES[k])));for(let i=0;i<keys.length;i++){try{state[keys[i]]=results[i].status==='fulfilled'?C.rows(results[i].value):null;}catch{state[keys[i]]=null;}}filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
+async function reload(){const keys=Object.keys(C.TABLES);$('reload').disabled=true;status('Actualisation des données autorisées…');try{const results=await Promise.allSettled([...keys.map(k=>grist.docApi.fetchTable(C.TABLES[k])),grist.docApi.fetchTable('SIGMA_V2_RC_SYNTHESE_TEST')]);for(let i=0;i<keys.length;i++){try{state[keys[i]]=results[i].status==='fulfilled'?C.rows(results[i].value):null;}catch{state[keys[i]]=null;}}try{state.rc=results[keys.length].status==='fulfilled'?C.rows(results[keys.length].value):null;}catch{state.rc=null;}filters();render();const failed=keys.filter(k=>state[k]===null);status(failed.length?'Accès indisponible ou refusé sur : '+failed.map(k=>C.TABLES[k]).join(', ')+'. Aucune élévation de droits.':'Données actualisées selon vos habilitations.',false);}catch(err){status('Actualisation impossible : '+(err?.message||err),true);}finally{$('reload').disabled=false;}}
 function init(){if(!C||!E){status('Modules de calcul métier manquants. Vérifier leur chargement.',true);return;}for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>nav(btn.dataset.tab));for(const btn of document.querySelectorAll('[data-goto]'))btn.addEventListener('click',()=>nav(btn.dataset.goto));$('search').addEventListener('input',renderDossiers);$('status-filter').addEventListener('change',renderDossiers);$('close-detail').addEventListener('click',()=>{ui.selected=null;renderDetail();});$('reload').addEventListener('click',reload);$('quick-cr-entretien').addEventListener('change',()=>{quickVersionHint();updateQuickControls();});$('quick-entretien').addEventListener('submit',saveQuickEntretien);$('quick-cr').addEventListener('submit',saveQuickCR);if(typeof grist==='undefined'){status('Widget à ouvrir dans Grist. Aucune donnée distante chargée.',true);render();return;}grist.ready({requiredAccess:'full'});reload();}
 window.addEventListener('DOMContentLoaded',init);
 })();
