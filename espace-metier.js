@@ -327,11 +327,11 @@ async function saveCentralHabilitation(event){event.preventDefault();const msg=$
   if(!c||!validEmail(email)||motif.length<8||motif.length>500)throw Error('Cellule, adresse RC ou motif incorrect.');
   const debut=isoToEpoch($('central-rc-debut').value),fin=isoToEpoch($('central-rc-fin').value);
   if(debut&&fin&&debut>fin)throw Error('Dates incompatibles.');
-  if(state.rcHabilitations.some(h=>Number(h.Cellule)===cell&&h.Role==='RC'&&activeHabilitation(h)))throw Error('Une habilitation RC active existe déjà pour cette cellule : la révoquer d’abord en central.');
+  if(state.rcHabilitations.some(h=>Number(h.Cellule)===cell&&h.Role==='RC'&&String(h.Email||'').trim().toLowerCase()===email&&h.Actif===true&&(!h.Date_Fin||!debut||Number(h.Date_Fin)>=debut)&&(!fin||!h.Date_Debut||fin>=Number(h.Date_Debut))))throw Error('Ce responsable possède déjà une habilitation active sur une période qui se chevauche dans cette cellule.');
   if(!confirm('Habiliter '+email+' comme RC de '+cellLabel(c)+' ?'))return;
   ui.busy=true;
   await grist.docApi.applyUserActions([['AddRecord',METIER_TABLES.rcHabilitations,null,{Email:email,Cellule:cell,Role:'RC',Actif:true,Date_Debut:debut,Date_Fin:fin,Motif:motif}]]);
-  $('central-rc-form').reset();await reload();set(msg,'Habilitation RC créée. Vérifier avec le compte Céline.');
+  $('central-rc-form').reset();await reload();set(msg,'Habilitation RC créée. Vérifier avec le compte concerné.');
  }catch(e){set(msg,'Habilitation centrale refusée : '+(e?.message||e));}finally{ui.busy=false;renderCentralHabilitations();}
 }
 async function revokeCentralHabilitation(h){const msg=$('central-rc-message');
@@ -439,7 +439,7 @@ function renderRCHabilitations(){
   list.append(el);
  }
  if(!rows.length)empty(list,'Aucun EC habilité visible dans les cellules gérées.');
- if(!cells.length)set(msg,'Aucune habilitation RC active et unique : l’administration centrale doit d’abord habiliter le RC.');
+ if(!cells.length)set(msg,'Aucune cellule déléguée à votre identité RC : vérifier les habilitations et les ACL.');
 }
 async function saveRCHabilitation(ev){ev.preventDefault();const msg=$('rc-hab-message');
  try{
