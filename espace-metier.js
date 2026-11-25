@@ -21,7 +21,7 @@ function chip(s){const a=node('span','chip',s);if(s==='Nouveau')a.classList.add(
 function item(title,desc,badge,action){const el=document.createElement(action?'button':'div');el.className='record'+(action?' actionable':'');if(action){el.type='button';el.addEventListener('click',action);}const left=node('span','record-main');left.append(node('strong',null,title),node('small',null,desc));el.append(left);if(badge){const right=node('span','record-aside');right.append(chip(badge));el.append(right);}return el;}
 function count(data,key){return Array.isArray(data[key])?String(data[key].length):'—';}
 function metric(title,count,detail){const el=node('div','metric');el.append(node('span','label',title),node('strong',null,count),node('small',null,detail));return el;}
-function nav(tab){if(tab==='administration'&&!ui.centralAllowed){status('Rubrique réservée à l’administration centrale. Accès non autorisé.',true);return;}ui.tab=tab;for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===tab;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}for(const sec of document.querySelectorAll('.tab'))sec.hidden=sec.id!=='tab-'+tab;const names={accueil:['Vue d’ensemble','Synthèse des informations accessibles'],rc:['Supervision RC','Synthèse non nominative de la cellule autorisée'],administration:['Administration centrale','Gestion des cellules et des responsables — habilitation centrale métier'], 'gestion-ec':['Gestion des écoutants','Habiliter les EC dans les cellules déléguées · RC'],dossiers:['Dossiers','Consultation des dossiers et de leurs éléments liés'],entretiens:['Entretiens','Créer et consulter les entretiens'],cr:['Comptes rendus','Consulter et préparer les versions accessibles'],rapports:['Rapports','Consulter et préparer les versions accessibles'],outils:['Modules métier','Accéder aux actions disponibles dans SIGMA TEST'],nouveau:['Nouveau signalement','Création EC : attribution par formule Grist'],agenda:['Mon agenda','Rendez-vous liés aux dossiers autorisés']};set($('page-title'),names[tab][0]);set($('page-subtitle'),names[tab][1]);render();}
+function nav(tab){if(tab==='administration'&&!ui.centralAllowed){status('Rubrique réservée à l’administration centrale. Accès non autorisé.',true);return;}ui.tab=tab;for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===tab;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}for(const sec of document.querySelectorAll('.tab'))sec.hidden=sec.id!=='tab-'+tab;const names={accueil:['Vue d’ensemble','Synthèse des informations accessibles'],rc:['Supervision RC','Synthèse non nominative de la cellule autorisée'],administration:['Administration centrale','Gestion des cellules et des responsables — habilitation centrale métier'], 'gestion-ec':['Gestion des écoutants','Habiliter les EC dans les cellules déléguées · RC'],dossiers:['Dossiers','Consultation des dossiers et de leurs éléments liés'],entretiens:['Entretiens','Créer et consulter les entretiens'],cr:['Comptes rendus','Consulter et préparer les versions accessibles'],rapports:['Rapports','Consulter et préparer les versions accessibles'],outils:['Modules métier','Accéder aux actions disponibles dans SIGMA TEST'],nouveau:['Nouveau signalement','Création RC ou EC : attribution par formule Grist'],agenda:['Mon agenda','Rendez-vous liés aux dossiers autorisés']};set($('page-title'),names[tab][0]);set($('page-subtitle'),names[tab][1]);render();}
 // V2.7.0 : administration centrale pour Owner technique ou administrateurs
 // métier explicitement habilités. Les ACL Grist restent la seule autorité.
 function refreshCentralNavigation(){
@@ -523,16 +523,28 @@ function validEmail(e){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));}
 function cellLabel(c){return String(c?.Nom||c?.Code||('Cellule #'+c?.id));}
 function isoToEpoch(s){if(!s)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(s))throw Error('Date invalide.');const date=new Date(s+'T00:00:00Z');if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==s)throw Error('Date invalide.');return Math.floor(date.getTime()/1000);}
 function authorizedEcCells(){
- // Aucune liste globale de cellules : uniquement les lignes d'habilitation que les ACL Grist rendent visibles.
- // Si plusieurs identités EC sont visibles, bloquer plutôt que supposer l'identité de l'utilisateur connecté.
- const rows=state.habilitations;
- if(!Array.isArray(rows))return null;
- const today=Math.floor(Date.now()/86400000)*86400;
- const active=rows.filter(h=>h.Role==='EC'&&h.Actif===true&&Number.isSafeInteger(Number(h.Cellule))&&Number(h.Cellule)>0&&(!h.Date_Debut||Number(h.Date_Debut)<=today)&&(!h.Date_Fin||Number(h.Date_Fin)>=today));
- const distinctEmails=new Set(active.map(h=>String(h.Email||'').trim().toLowerCase()).filter(Boolean));
- if(distinctEmails.size!==1)return [];
- const ids=new Set(active.map(h=>Number(h.Cellule)));
- return (state.cellules||[]).filter(c=>cellActive(c)&&ids.has(Number(c.id)));
+ // Pour un compte métier non central, les lignes RC sont limitées à son identité par ACL.
+ // Un RC voit aussi les habilitations des EC de sa cellule : ne jamais en déduire son identité.
+ if(ui.centralAllowed||ui.techOwner)return [];
+ if(!Array.isArray(state.rcHabilitations)||!Array.isArray(state.habilitations)||!Array.isArray(state.cellules))return null;
+ const rc=state.rcHabilitations.filter(h=>h.Role==='RC');
+ const ec=state.habilitations.filter(h=>h.Role==='EC');
+ const source=rc.length?rc:ec;
+ const emails=new Set(source.map(h=>String(h.Email||'')).filter(Boolean));
+ if(emails.size!==1)return [];
+ const email=[...emails][0];
+ if(!validEmail(email))return [];
+ const eligible=new Set();
+ for(const rows of [rc,ec]){
+  const counts=new Map();
+  for(const h of rows){
+   const id=Number(h.Cellule);
+   if(h.Email!==email||!activeHabilitation(h)||!Number.isSafeInteger(id)||id<=0)continue;
+   counts.set(id,(counts.get(id)||0)+1);
+  }
+  for(const [id,n] of counts)if(n===1)eligible.add(id);
+ }
+ return state.cellules.filter(c=>cellActive(c)&&eligible.has(Number(c.id)));
 }
 function initFirstContactChoices(){
  const facts=$('new-faits'),discrim=$('new-discriminations');
@@ -553,7 +565,7 @@ function renderNewDossier(){
  set($('new-cellule-info'),eligible?.length>1?'Plusieurs habilitations actives : sélectionne la cellule concernée.':'');
  const enabled=quickEnabled()&&Array.isArray(eligible)&&eligible.length>0&&Array.isArray(state.dossiers)&&Array.isArray(state.faits)&&Array.isArray(state.discriminations)&&!ui.busy;
  for(const id of ['new-date','new-heure','new-canal','new-cellule','new-auteur','new-objet','new-save'])$(id).disabled=!enabled;
- if(!enabled)set($('new-message'),'Création indisponible : vérifier les habilitations EC visibles, les ACL et la table SIGMA_V2_FAITS_DISCRIMINATION_TEST. Une seule identité EC doit être visible.');
+ if(!enabled)set($('new-message'),'Création indisponible : vérifier vos habilitations personnelles RC/EC et les ACL. Le cumul avec un rôle central n’est pas encore pris en charge dans ce formulaire.');
 }
 function selectedValues(container){return [...$(container).querySelectorAll('input:checked')].map(x=>x.value);}
 function firstContactActions({cell,stamp,heure,canal,auteur,objet,motifs,criteres,commentaire}){
@@ -582,9 +594,9 @@ async function saveNewDossier(ev){ev.preventDefault();const msg=$('new-message')
  try{
   if(!quickEnabled()||ui.busy||!Array.isArray(state.dossiers)||!Array.isArray(state.faits)||!Array.isArray(state.discriminations))throw Error('Tables ou droits indisponibles.');
   const cell=Number($('new-cellule').value),eligible=authorizedEcCells();
-  if(!Array.isArray(eligible)||!eligible.some(c=>Number(c.id)===cell))throw Error('Cette cellule ne figure pas dans les habilitations EC accessibles.');
+  if(!Array.isArray(eligible)||!eligible.some(c=>Number(c.id)===cell))throw Error('Cette cellule ne figure pas dans vos habilitations personnelles RC/EC.');
   const actions=firstContactActions({cell,stamp:isoToEpoch($('new-date').value),heure:$('new-heure').value,canal:$('new-canal').value,auteur:$('new-auteur').value,objet:$('new-objet').value,motifs:selectedValues('new-faits'),criteres:selectedValues('new-discriminations'),commentaire:$('new-faits-commentaire').value.trim()});
-  if(!confirm('Créer un dossier TEST et ses '+(actions.filter(a=>a[1]===SIGMA_FAITS_TABLE).length)+' motif(s) ? L’identité EC sera attribuée par Grist.'))return;
+  if(!confirm('Créer un dossier TEST et ses '+(actions.filter(a=>a[1]===SIGMA_FAITS_TABLE).length)+' motif(s) ? L’identité du référent RC ou EC sera attribuée par Grist.'))return;
   ui.busy=true;$('new-save').disabled=true;
   // Transaction unique Grist avec IDs temporaires négatifs : aucune création partielle si l'une des ACL refuse.
   // Ne transmettre ni EC_Email ni auteur technique : déclenchement côté Grist sous l'identité réelle.

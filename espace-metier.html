@@ -10,7 +10,7 @@
 <script defer src="rapports-core.js?v=2.4.0"></script>
 <script defer src="rapports-config.js?v=2.4.0"></script>
 <script defer src="espace-metier.js?v=2.8.0.1"></script></head>
-<body><div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark">Σ</span><span>SIGMA<small>V2.8.0.2 · TEST</small></span></div><p class="side-caption">ESPACE MÉTIER RC / EC</p>
+<body><div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark">Σ</span><span>SIGMA<small>V2.8.0.3 · TEST</small></span></div><p class="side-caption">ESPACE MÉTIER RC / EC</p>
 <nav id="nav" aria-label="Navigation principale">
 <button type="button" class="navitem active" data-tab="accueil" aria-current="page">Vue d’ensemble</button>
 <button type="button" class="navitem" data-tab="nouveau">Nouveau signalement</button>
@@ -28,7 +28,7 @@
 <div id="status" class="status" role="status" aria-live="polite">Chargement en cours…</div>
 <section id="tab-accueil" class="tab" aria-label="Vue d’ensemble"><div class="metrics" id="metrics"></div><div class="twocol"><section class="panel"><div class="panel-head"><h2>Dossiers récents</h2><button type="button" class="text-action" data-goto="dossiers">Voir les dossiers</button></div><div id="recent-dossiers"></div></section><section class="panel"><h2>Avancement des dossiers accessibles</h2><div id="status-stats"></div><p class="hint">Ces chiffres portent uniquement sur les enregistrements autorisés, pas sur l’ensemble de la cellule ou de l’académie.</p></section></div><section class="panel"><div class="panel-head"><h2>Mes prochains rendez-vous</h2><button type="button" class="text-action" data-goto="agenda">Ouvrir mon agenda</button></div><div id="upcoming-rdv" class="record-list"></div></section><section class="panel"><h2>Parcours de traitement</h2><div class="workflow"><span>1 · Dossier</span><span>2 · Entretien</span><span>3 · Compte rendu</span><span>4 · Accord déclarant</span><span>5 · Rapport interne</span></div><p class="hint">La validation par le déclarant n’est pas encore raccordée à un portail sécurisé. Aucun droit RC n’est ouvert automatiquement.</p></section></section>
 <section id="tab-nouveau" class="tab" hidden aria-label="Création d’un signalement">
-<section class="panel"><h2>Créer un dossier de signalement</h2><p class="inline-note">L'écoutant connecté doit être désigné automatiquement par une formule déclenchée <strong>user.Email</strong> sur la colonne EC_Email de Grist. Aucun courriel d'écoutant n'est saisi ni transmis par le widget. Réservé aux données fictives TEST.</p>
+<section class="panel"><h2>Créer un dossier de signalement</h2><p class="inline-note">Le référent connecté (RC ou EC) doit être désigné automatiquement par une formule déclenchée <strong>user.Email</strong> sur la colonne EC_Email de Grist. Aucun courriel du référent n'est saisi ni transmis par le widget. Réservé aux données fictives TEST.</p>
 <form id="new-dossier-form" class="sigma-form" autocomplete="off">
 <label class="field" id="new-cellule-wrap">Cellule d’écoute habilitée <select id="new-cellule" required></select><small id="new-cellule-info" class="hint"></small></label>
 <label class="field">Date de saisine <input id="new-date" type="date" required></label>
