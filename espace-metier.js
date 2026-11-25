@@ -561,10 +561,11 @@ function renderNewDossier(){
  for(const c of eligible||[])sel.add(new Option(cellLabel(c),String(c.id)));
  if([...sel.options].some(o=>o.value===old))sel.value=old;
  if(eligible?.length===1)sel.value=String(eligible[0].id);
- $('new-cellule-wrap').hidden=eligible?.length===1;
- set($('new-cellule-info'),eligible?.length>1?'Plusieurs habilitations actives : sélectionne la cellule concernée.':'');
+ $('new-cellule-wrap').hidden=false;
+ set($('new-cellule-info'),eligible?.length===1?'Cellule attribuée automatiquement.':eligible?.length>1?'Plusieurs habilitations actives : sélectionne la cellule concernée.':'Aucune cellule habilitée disponible.');
  const enabled=quickEnabled()&&Array.isArray(eligible)&&eligible.length>0&&Array.isArray(state.dossiers)&&Array.isArray(state.faits)&&Array.isArray(state.discriminations)&&!ui.busy;
  for(const id of ['new-date','new-heure','new-canal','new-cellule','new-auteur','new-objet','new-save'])$(id).disabled=!enabled;
+ sel.disabled=!enabled||eligible?.length===1;
  if(!enabled)set($('new-message'),'Création indisponible : vérifier vos habilitations personnelles RC/EC et les ACL. Le cumul avec un rôle central n’est pas encore pris en charge dans ce formulaire.');
 }
 function selectedValues(container){return [...$(container).querySelectorAll('input:checked')].map(x=>x.value);}
