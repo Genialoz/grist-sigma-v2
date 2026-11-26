@@ -751,18 +751,19 @@ function renderDossierPartages(d){
  if(!enabled){empty(list,'Gestion indisponible : référent habilité et table des partages requis.');return;}
  if(!rows.length)empty(list,'Aucun partage préparé.');
  for(const r of C.sorted(rows)){
-  const el=item(r.Destinataire_Email,'Consultation · expiration : '+C.formatDate(r.Date_Expiration)+' · création : '+C.formatDate(r.Date_Creation),r.Actif!==true?'Révoqué':r.Valide_ACL===true?(shareEmails(d.Partages_Lecture_Effective_ACL).includes(r.Destinataire_Email)?'Accessible':'En attente des conditions'):'Invalide');
+  const el=item(r.Destinataire_Email,(r.Droit==='Collaboration'?'Collaboration (écriture non activée)':'Consultation')+' · expiration : '+C.formatDate(r.Date_Expiration)+' · création : '+C.formatDate(r.Date_Creation),r.Actif!==true?'Révoqué':r.Valide_ACL===true?(shareEmails(d.Partages_Lecture_Effective_ACL).includes(r.Destinataire_Email)?'Accessible':'En attente des conditions'):'Invalide');
   if(r.Actif===true){const btn=node('button','btn btn-light','Révoquer');btn.type='button';btn.addEventListener('click',()=>revokeDossierPartage(d,r));el.append(btn);}list.append(el);
  }
 }
 async function saveDossierPartage(ev){ev.preventDefault();if(ui.busy)return;
- const d=(state.dossiers||[]).find(x=>Number(x.id)===Number(ui.selected)),email=$('dossier-share-email').value,msg=$('dossier-share-message');
+ const d=(state.dossiers||[]).find(x=>Number(x.id)===Number(ui.selected)),email=$('dossier-share-email').value,droit=$('dossier-share-right').value,msg=$('dossier-share-message');
  if(!quickEnabled()||!shareCandidates(d)?.includes(email)||!Array.isArray(state.dossierPartages))return;
+ if(!['Consultation','Collaboration'].includes(droit)){set(msg,'Niveau d’accès invalide.');return;}
  try{const date=isoToEpoch($('dossier-share-expiration').value);if(date&&date<isoToEpoch(localDate(new Date())))throw Error('Expiration passée.');
  ui.busy=true;renderDossierPartages(d);
  const fresh=C.rows(await grist.docApi.fetchTable(DOSSIER_PARTAGES_TABLE));
  if(fresh.some(r=>Number(r.Dossier)===Number(d.id)&&r.Destinataire_Email===email&&r.Candidat_Valide_ACL===true))throw Error('Partage actif déjà présent.');
- await grist.docApi.applyUserActions([['AddRecord',DOSSIER_PARTAGES_TABLE,null,{Dossier:Number(d.id),Destinataire_Email:email,Droit:'Consultation',Actif:true,Date_Expiration:date}]]);
+ await grist.docApi.applyUserActions([['AddRecord',DOSSIER_PARTAGES_TABLE,null,{Dossier:Number(d.id),Destinataire_Email:email,Droit:droit,Actif:true,Date_Expiration:date}]]);
  $('dossier-share-form').reset();await reload();set(msg,'Partage enregistré. L’accès dépend des conditions de confidentialité et des ACL Grist.');
  }catch(e){set(msg,'Création refusée : '+(e?.message||e));}finally{ui.busy=false;const current=(state.dossiers||[]).find(x=>Number(x.id)===Number(ui.selected));if(current)renderDossierPartages(current);}
 }
