@@ -451,6 +451,11 @@ function renderRCHabilitations(){
  if(!rows.length)empty(list,'Aucun EC habilité visible dans les cellules gérées.');
  if(!cells.length)set(msg,'Aucune cellule déléguée à votre identité RC : vérifier les habilitations et les ACL.');
 }
+// V2.8.0.4.2 : une nouvelle période crée toujours une nouvelle ligne.
+function ecPeriodConflict(rows,cell,email,debut,fin){
+ return rows.some(h=>Number(h.Cellule)===cell&&String(h.Email||'').trim().toLowerCase()===email&&h.Role==='EC'&&h.Actif===true&&
+  (!h.Date_Fin||Number(h.Date_Fin)>=debut)&&(!fin||!h.Date_Debut||Number(h.Date_Debut)<=fin));
+}
 async function saveRCHabilitation(ev){ev.preventDefault();const msg=$('rc-hab-message');
  try{
   if(ui.busy||!quickEnabled()||!Array.isArray(state.habilitations)||!Array.isArray(state.habJournal))throw Error('Référentiel, journal ou écriture indisponible.');
@@ -459,17 +464,22 @@ async function saveRCHabilitation(ev){ev.preventDefault();const msg=$('rc-hab-me
   const email=$('rc-hab-email').value.trim().toLowerCase(),motif=$('rc-hab-motif').value.trim();
   if(!validEmail(email))throw Error('Adresse EC incorrecte.');
   if(motif.length<8||motif.length>500)throw Error('Motif obligatoire entre 8 et 500 caractères.');
-  const debut=isoToEpoch($('rc-hab-debut').value),fin=isoToEpoch($('rc-hab-fin').value);
-  if(debut&&fin&&debut>fin)throw Error('Date de fin antérieure au début.');
-  if(state.habilitations.some(h=>Number(h.Cellule)===cell&&String(h.Email||'').trim().toLowerCase()===email&&h.Role==='EC'))throw Error('Une habilitation existe déjà pour cet EC et cette cellule. Réactivation à traiter dans une évolution contrôlée.');
+  const today=isoToEpoch(localDate(new Date()));
+  const debut=isoToEpoch($('rc-hab-debut').value)||today,fin=isoToEpoch($('rc-hab-fin').value);
+  if(debut<today)throw Error('La nouvelle habilitation ne peut pas commencer avant aujourd’hui.');
+  if(fin&&debut>fin)throw Error('Date de fin antérieure au début.');
+  if(ecPeriodConflict(state.habilitations,cell,email,debut,fin))throw Error('Une habilitation EC active couvre déjà tout ou partie de cette période.');
   if(!confirm('Habiliter '+email+' sur '+cellLabel(c)+' ?'))return;
   ui.busy=true;
+  // Relecture avant écriture ; le contrôle ACL Grist reste obligatoire.
+  const fresh=C.rows(await grist.docApi.fetchTable(METIER_TABLES.habilitations));
+  if(ecPeriodConflict(fresh,cell,email,debut,fin))throw Error('Une habilitation EC active couvre déjà tout ou partie de cette période. Actualisez les données.');
   // Ajout atomique habilitation + événement : référence temporaire Grist.
   await grist.docApi.applyUserActions([
    ['AddRecord',METIER_TABLES.habilitations,-1,{Email:email,Cellule:cell,Role:'EC',Actif:true,Date_Debut:debut,Date_Fin:fin,Motif:motif}],
    ['AddRecord',METIER_TABLES.habJournal,null,{Habilitation:-1,Action:'Creation',Motif:motif,Nouvel_Actif:true}]
   ]);
-  $('rc-habilitation-form').reset();await reload();set(msg,'Habilitation créée et journalisée. Tester le compte EC authentifié.');
+  $('rc-habilitation-form').reset();await reload();set(msg,'Nouvelle habilitation créée et journalisée. Les anciennes lignes sont conservées. Tester le compte EC authentifié.');
  }catch(e){set(msg,'Habilitation refusée : '+(e?.message||e));}
  finally{ui.busy=false;renderRCHabilitations();}
 }
