@@ -835,7 +835,7 @@ function editRdv(id,inDossier=false){const r=(state.rdv||[]).find(x=>Number(x.id
  for(const [id,k] of [['rdv-modalite','Modalite'],['rdv-statut','Statut'],['rdv-lieu','Lieu'],['rdv-note','Note_Non_Nominative']])$(id).value=String(r[k]||'');
  const paris=(ts)=>{const d=rdvDate(ts);if(!d)return '';const x=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(d);return x.replace(' ','T');};
  $('rdv-debut').value=paris(r.Debut);$('rdv-fin').value=paris(r.Fin);
- set($('rdv-form-title'),'Modifier le rendez-vous #'+id);$('rdv-save').textContent='Enregistrer la modification';$('rdv-form').scrollIntoView?.({block:'start',behavior:'smooth'});
+ set($('rdv-form-title'),'Modifier le rendez-vous #'+id);$('rdv-save').textContent='Enregistrer la modification';updateRdvSaveControl();$('rdv-form').scrollIntoView?.({block:'start',behavior:'smooth'});
 }
 function parisStamp(s){if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s))throw Error('Date/heure invalide.');
  const [year,month,day,hour,min]=s.match(/\d+/g).map(Number);
@@ -854,11 +854,12 @@ function dateBounds(date,mode){let [y,m,d]=date.split('-').map(Number);let first
  return {begin:parisStamp(key(first)+'T00:00'),end:parisStamp(key(last)+'T00:00'),first:last&&first,last};
 }
 
+function updateRdvSaveControl(){const ds=$('rdv-dossier');$('rdv-save').disabled=!quickEnabled()||!Array.isArray(state.rdv)||!Array.isArray(state.rdvHist)||!Array.isArray(state.dossiers)||ui.busy||!activityWritable(dossierById(ds.value));}
 function renderAgenda(){if(ui.tab==='agenda')placeRdvForm();const root=$('agenda-list');root.replaceChildren();const ds=$('rdv-dossier'),prev=ds.value;ds.replaceChildren(new Option('— Choisir un dossier accessible —',''));
  for(const d of (state.dossiers||[]).filter(d=>activityWritable(d)&&(!rdvContext()||Number(d.id)===Number(rdvContext().id))))ds.add(new Option(C.dossierLabel(d.id)+' · '+val(d.Statut),String(d.id)));
  if([...ds.options].some(o=>o.value===prev))ds.value=prev;
  if(ui.editRdv){const r=(state.rdv||[]).find(x=>Number(x.id)===Number(ui.editRdv));if(r)ds.value=String(r.Dossier);}
- if(rdvContext()&&activityWritable(rdvContext()))ds.value=String(rdvContext().id);ds.disabled=!!rdvContext()||!!ui.editRdv||!quickEnabled();$('rdv-save').disabled=!quickEnabled()||!Array.isArray(state.rdv)||!Array.isArray(state.rdvHist)||!Array.isArray(state.dossiers)||ui.busy||!activityWritable(dossierById(ds.value));
+ if(rdvContext()&&activityWritable(rdvContext()))ds.value=String(rdvContext().id);ds.disabled=!!rdvContext()||!!ui.editRdv||!quickEnabled();updateRdvSaveControl();
  if(state.rdv===null){empty(root,'Table des rendez-vous indisponible : vérifier import et ACL.');return;}
  const date=$('agenda-date').value||localDate(new Date()),mode=$('agenda-mode').value;
  let range;try{range=dateBounds(date,mode);}catch(e){set($('agenda-period'),'Date invalide : '+e.message);return;}if(!range)return;
