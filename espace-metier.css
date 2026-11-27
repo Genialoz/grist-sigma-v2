@@ -77,3 +77,6 @@
 /* V2.8.0.5.7.3 — choix multiples organisation */
 .org-group .check-option input[type=checkbox]{appearance:auto;width:17px;height:17px;min-width:17px;flex:0 0 17px;margin:0;padding:0;accent-color:var(--blue)}
 .org-group .check-grid{grid-template-columns:repeat(auto-fit,minmax(min(215px,100%),1fr))}
+
+/* Organisation : validation accessible */
+.org-field-error{display:block;color:#b42318;font-weight:650;font-size:13px}.org-group [aria-invalid="true"]{outline:2px solid #b42318;outline-offset:2px}.org-feedback{padding:10px 12px;border:1px solid #b8d8c6;background:#eef8f1;color:#21653d;border-radius:8px;font-weight:600;overflow-wrap:anywhere}.org-feedback.error{background:#fff1f1;border-color:#efc9c9;color:#903b3b}
