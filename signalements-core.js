@@ -30,6 +30,6 @@
  }
  function referenceChoices(records){return (records||[]).map(r=>({id:r.id,label:r.Nom||('#'+r.id)})).sort((a,b)=>a.label.localeCompare(b.label,'fr'));}
  function rcEligible(d){return !!(d&&d.Rapport_Signe_Declarant===true&&d.Anonymat_Leve===true);}
- function title(d){return 'SIG-'+String(d.id).padStart(6,'0');}
+ function title(d){const label=d.Identifiant_Dossier;return typeof label==='string'&&/^SIG-(?:[0-9]{8}-[0-9]{4,}|[0-9]{6,})$/.test(label)?label:'SIG-'+String(d.id).padStart(6,'0');}
  return {tables,dossierFields,faitFields,rows,validate,dateStamp,changedValues,checkReferenceChange,referenceChoices,rcEligible,title};
 });

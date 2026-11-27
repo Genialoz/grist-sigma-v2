@@ -11,7 +11,7 @@ function refreshActorLabels(){const d=(S.dossiers||[]).find(x=>String(x.id)===$(
 function legacyLabel(r){const original=r.Etat||'Brouillon';return S.soumissions!==null&&P.isSubmitted(S.soumissions,r.id)?original+' · ancienne soumission V2.3.0':original;}
 function render(){
  fill('e-dossier',(S.dossiers||[]).map(d=>({id:d.id,label:C.label(d)})),'— Choisir un dossier accessible —');
- fill('cr-entretien',(S.entretiens||[]).map(e=>({id:e.id,label:'Entretien #'+e.id+' — dossier '+C.label({id:Number(e.Dossier)})})),'— Choisir un entretien —');
+ fill('cr-entretien',(S.entretiens||[]).map(e=>({id:e.id,label:'Entretien #'+e.id+' — dossier '+C.label((S.dossiers||[]).find(d=>Number(d.id)===Number(e.Dossier))||{id:Number(e.Dossier)})})),'— Choisir un entretien —');
  refreshActorLabels();const h=$('history');h.replaceChildren();$('cr-detail').hidden=true;
  if(!S.entretiens){text(h,'Table des entretiens non accessible : vérifier les ACL et colonnes calculées.');$('e-save').disabled=true;$('cr-save').disabled=true;return;}
  for(const e of S.entretiens){const p=document.createElement('div');p.className='entry';const cr=C.versionsPourEntretien(S.cr,e.id);text(p,'Entretien #'+e.id+' · '+(e.Type||'')+' · '+cr.length+' version(s) accessible(s) · créé le '+stamp(e.Date_Creation)+' · par '+(e.Createur_Email||'Non tracé')+' · dernière correction journalisée : '+(e.Dernier_Modificateur_Email||'Non tracé')+' · '+stamp(e.Date_Derniere_Modification));h.appendChild(p);
