@@ -83,3 +83,6 @@
 
 /* V2.8.0.5.8 — administration centrale */
 #central-entite-form [aria-invalid=true],#central-cellule-form [aria-invalid=true]{outline:2px solid #b42318;outline-offset:2px}#central-entite-message,#central-cellules-message{overflow-wrap:anywhere}#central-entites-list .record,#central-cellules-list .record{flex-wrap:wrap}#central-entites-list .record-main,#central-cellules-list .record-main{flex:1;min-width:180px}#central-entite-form input[type=hidden],#central-cellule-form input[type=hidden]{display:none} 
+
+/* Recherche dossiers V2.8.0.7.3 */
+.search-advanced{margin:12px 0;padding:12px;border:1px solid #cbd5e1;border-radius:8px}.search-advanced summary{cursor:pointer;font-weight:600}.search-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.search-grid fieldset{min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:10px}.search-grid .check-grid{max-height:210px;overflow:auto;display:grid;grid-template-columns:1fr;gap:4px}.search-grid .check-option{overflow-wrap:anywhere}@media(max-width:700px){.search-grid{grid-template-columns:1fr}}
