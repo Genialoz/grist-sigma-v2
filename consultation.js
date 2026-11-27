@@ -10,7 +10,7 @@ function show(entry){clearPreview();if(!entry)return;const {p,report,assessment}
  if(!assessment.eligible){text($('preview-state'),'Prévisualisation bloquée : '+assessment.reasons.join(' · '));$('preview-state').className='blocked';return;}
  // ACL Grist limitent les données retournées. Le rendu DOM est strictement textuel.
  text($('preview-title'),report.Titre||'Rapport sans titre');
- text($('preview-meta'),'Rapport #'+report.id+' · version '+report.Version+' · dossier #'+report.Dossier);
+ text($('preview-meta'),(report.Identifiant_Metier||'Rapport #'+report.id+' · version '+report.Version+' · dossier #'+report.Dossier));
  text($('preview-dest'),'Destinataire prévu : '+p.Destinataire_Email+' · date limite : '+readableDate(p.Date_Expiration));
  text($('preview-content'),report.Texte||'');
  text($('preview-state'),'Contrôles internes satisfaits — aucun accès externe activé');$('preview-state').className='ok';
@@ -18,7 +18,7 @@ function show(entry){clearPreview();if(!entry)return;const {p,report,assessment}
 }
 function render(){const area=$('entries');area.replaceChildren();clearPreview();const ready=[S.rapports,S.preparations,S.revocations].every(x=>x!==null);if(!ready){text(area,'Chargement incomplet : accès refusé ou table absente.');return;}
  const items=C.available(S.preparations,S.rapports,S.revocations);
- for(const item of items){const div=document.createElement('div');div.className='entry';const heading=document.createElement('strong');text(heading,'Préparation #'+item.p.id+' — '+(item.report?'Rapport v'+item.report.Version:'Rapport inaccessible'));div.appendChild(heading);
+ for(const item of items){const div=document.createElement('div');div.className='entry';const heading=document.createElement('strong');text(heading,'Préparation #'+item.p.id+' — '+(item.report?(item.report.Identifiant_Metier||'Rapport v'+item.report.Version):'Rapport inaccessible'));div.appendChild(heading);
  const line=document.createElement('p');text(line,'Destinataire '+(item.p.Destinataire_Email||'—')+' · expiration '+readableDate(item.p.Date_Expiration));div.appendChild(line);
  const message=document.createElement('small');message.className=item.assessment.eligible?'ok':'blocked';text(message,item.assessment.eligible?'Contrôles OK (interne)':'Bloquée : '+item.assessment.reasons.join(' · '));div.appendChild(message);
  const b=document.createElement('button');b.type='button';text(b,'Prévisualiser');b.disabled=!item.assessment.eligible;b.addEventListener('click',()=>show(item));div.appendChild(b);area.appendChild(div);}
