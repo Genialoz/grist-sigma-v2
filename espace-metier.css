@@ -60,3 +60,14 @@
 .person-fields .person-field-error{display:block;color:#b42318;font-size:12px;font-weight:600}
 
 .new-person-block{border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}.new-person-block summary{font-weight:700;cursor:pointer}.new-person-card{border:1px solid var(--line);border-radius:9px;padding:12px;margin:12px 0;min-width:0}.new-person-feedback{color:#b42318;font-weight:600}.new-person-feedback:empty{display:none}
+
+/* V2.8.0.5.6 — groupes de navigation accessibles et repliables */
+.sidebar #nav{display:grid;gap:8px;min-width:0}
+.nav-group{min-width:0;border:1px solid #42627a;border-radius:9px;background:#193950}
+.nav-group>summary{padding:10px 11px;cursor:pointer;color:#d3e5f1;font-size:12px;font-weight:750;overflow-wrap:anywhere}
+.nav-group>summary:focus-visible{outline:3px solid #94cafa;outline-offset:2px}
+.nav-group[open]>summary{border-bottom:1px solid #42627a}
+.nav-group-items{display:grid;gap:3px;padding:5px}
+.nav-group .navitem{padding:8px 9px;font-size:13px;white-space:normal;overflow-wrap:anywhere;min-width:0}
+@media(min-width:741px){.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;align-self:flex-start;width:260px}.side-note{margin-top:auto}}
+@media(max-width:740px){.sidebar #nav{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));align-items:start}.nav-group>summary{padding:9px}.sidebar .navitem{font-size:12px}}

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SIGMA — Espace métier RC / EC · TEST</title>
-<link rel="stylesheet" href="espace-metier.css?v=2.8.0.5.5.3">
+<link rel="stylesheet" href="espace-metier.css?v=2.8.0.5.6">
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
 <script defer src="espace-metier-config.js?v=2.7.2"></script>
 <script defer src="espace-metier-core.js?v=2.7.2"></script>
@@ -9,21 +9,16 @@
 <script defer src="sigma-cellules-suppression.js?v=2.7.2"></script>
 <script defer src="rapports-core.js?v=2.8.0.5.3"></script>
 <script defer src="rapports-config.js?v=2.4.0"></script>
-<script defer src="espace-metier.js?v=2.8.0.5.5.3"></script></head>
-<body><div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark">Σ</span><span>SIGMA<small>V2.8.0.5.5.3 · TEST</small></span></div><p class="side-caption">ESPACE MÉTIER RC / EC</p>
+<script defer src="espace-metier.js?v=2.8.0.5.6"></script></head>
+<body><div class="app"><aside class="sidebar"><div class="brand"><span class="brand-mark">Σ</span><span>SIGMA<small>V2.8.0.5.6 · TEST</small></span></div><p class="side-caption">ESPACE MÉTIER RC / EC</p>
 <nav id="nav" aria-label="Navigation principale">
 <button type="button" class="navitem active" data-tab="accueil" aria-current="page">Vue d’ensemble</button>
-<button type="button" class="navitem" data-tab="nouveau">Nouveau signalement</button>
-<button type="button" class="navitem" data-tab="agenda">Mon agenda</button>
-<button type="button" class="navitem" data-tab="rc">Supervision RC</button>
-<button type="button" class="navitem" data-tab="composition" hidden>Composition de ma cellule</button>
-<button type="button" class="navitem" data-tab="gestion-ec">Gestion des écoutants</button>
-<button type="button" class="navitem" data-tab="administration" hidden disabled aria-hidden="true">Administration centrale</button>
-<button type="button" class="navitem" data-tab="dossiers">Dossiers</button>
-<button type="button" class="navitem" data-tab="entretiens">Entretiens</button>
-<button type="button" class="navitem" data-tab="cr">Comptes rendus</button>
-<button type="button" class="navitem" data-tab="rapports">Rapports</button>
-<button type="button" class="navitem" data-tab="outils">Accéder aux modules</button></nav>
+<details class="nav-group" open><summary>Signalements et dossiers</summary><div class="nav-group-items"><button type="button" class="navitem" data-tab="nouveau">Nouveau signalement</button><button type="button" class="navitem" data-tab="dossiers">Dossiers</button></div></details>
+<details class="nav-group" open><summary>Organisation du travail</summary><div class="nav-group-items"><button type="button" class="navitem" data-tab="agenda">Mon agenda</button></div></details>
+<details class="nav-group"><summary>Accès directs aux documents</summary><div class="nav-group-items"><button type="button" class="navitem" data-tab="entretiens">Entretiens</button><button type="button" class="navitem" data-tab="cr">Comptes rendus</button><button type="button" class="navitem" data-tab="rapports">Rapports</button></div></details>
+<details class="nav-group" hidden><summary>Administration de la cellule</summary><div class="nav-group-items"><button type="button" class="navitem" hidden data-tab="rc">Supervision RC</button><button type="button" class="navitem" data-tab="composition" hidden>Composition de ma cellule</button><button type="button" class="navitem" hidden data-tab="gestion-ec">Gestion des écoutants</button></div></details>
+<details class="nav-group" hidden><summary>Administration centrale</summary><div class="nav-group-items"><button type="button" class="navitem" data-tab="administration" hidden disabled aria-hidden="true">Administration centrale</button></div></details>
+<details class="nav-group"><summary>Outils et modules</summary><div class="nav-group-items"><button type="button" class="navitem" data-tab="outils">Accéder aux modules</button></div></details></nav>
 <div class="side-note"><strong>Périmètre de lecture</strong><p>Seules les données autorisées par les ACL Grist sont chargées. Ce widget ne délivre aucun nouveau droit.</p></div></aside>
 <main class="main"><header class="topbar"><div><p class="eyebrow">SIGMA / TEST / RC &amp; EC</p><h1 id="page-title">Vue d’ensemble</h1><p id="page-subtitle" class="muted">Synthèse des éléments autorisés pour votre compte</p></div><button type="button" id="reload" class="btn refresh">↻ Actualiser</button></header>
 <div id="status" class="status" role="status" aria-live="polite">Chargement en cours…</div>
