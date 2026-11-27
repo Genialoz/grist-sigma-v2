@@ -86,3 +86,13 @@
 
 /* Recherche dossiers V2.8.0.7.3 */
 .search-advanced{margin:12px 0;padding:12px;border:1px solid #cbd5e1;border-radius:8px}.search-advanced summary{cursor:pointer;font-weight:600}.search-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.search-grid fieldset{min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:10px}.search-grid .check-grid{max-height:210px;overflow:auto;display:grid;grid-template-columns:1fr;gap:4px}.search-grid .check-option{overflow-wrap:anywhere}@media(max-width:700px){.search-grid{grid-template-columns:1fr}}
+
+/* V2.8.0.8 — consultation d’abord, saisie à la demande. */
+.editor-collapsed{display:none!important}
+.editor-open{margin:0 0 14px;max-width:100%;white-space:normal;text-align:left}
+.editor-cancel{margin:8px 0 0 10px}
+#dossier-share-form:not(.editor-collapsed){margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:10px;background:#fbfdff}
+.entretien-read-view{display:grid;gap:10px;margin:16px 0}
+.entretien-read-line{border-bottom:1px solid var(--line);padding:8px 0;overflow-wrap:anywhere}
+.entretien-read-line div{white-space:pre-wrap;margin-top:3px}
+@media(max-width:740px){.editor-cancel{margin-left:0}.editor-open{width:100%}}
