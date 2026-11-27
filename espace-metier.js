@@ -1,7 +1,7 @@
 'use strict';(function(){
 const C=window.SigmaEspaceCore,E=window.SigmaEntretiensCore,$=id=>document.getElementById(id);
 const state={dossiers:null,entretiens:null,cr:null,rapports:null,rc:null,rcCibles:null,rcDemandes:null,cellules:null,habilitations:null,affectations:null,rdv:null,rdvHist:null,faits:null,discriminations:null,rcHabilitations:null,habJournal:null,adminsCentraux:null,dossierPartages:null},ui={busy:false,tab:'accueil',selected:null,report:null,detailTab:"synthese",document:null,centralAllowed:false,techOwner:false};
-const METIER_TABLES={entites:'SIGMA_ENTITES',cellules:'SIGMA_CELLULES',habilitations:'SIGMA_V2_EC_HABILITATIONS_TEST',affectations:'SIGMA_V2_AFFECTATIONS_TEST',rdv:'SIGMA_V2_RENDEZ_VOUS_TEST',rdvHist:'SIGMA_V2_RDV_HISTORIQUE_TEST',faits:'SIGMA_V2_FAITS_TEST',discriminations:'SIGMA_V2_FAITS_DISCRIMINATION_TEST',rcHabilitations:'SIGMA_V2_RC_HABILITATIONS_TEST',habJournal:'SIGMA_V2_HABILITATIONS_JOURNAL_TEST',corrections:'SIGMA_V2_DOSSIERS_HISTORIQUE_TEST',membres:'SIGMA_MEMBRES_CELLULE',membresHist:'SIGMA_V2_MEMBRES_HISTORIQUE_TEST'};
+const METIER_TABLES={transferRequests:'SIGMA_V2_TRANSFERTS_DEMANDES_TEST',entites:'SIGMA_ENTITES',cellules:'SIGMA_CELLULES',habilitations:'SIGMA_V2_EC_HABILITATIONS_TEST',affectations:'SIGMA_V2_AFFECTATIONS_TEST',rdv:'SIGMA_V2_RENDEZ_VOUS_TEST',rdvHist:'SIGMA_V2_RDV_HISTORIQUE_TEST',faits:'SIGMA_V2_FAITS_TEST',discriminations:'SIGMA_V2_FAITS_DISCRIMINATION_TEST',rcHabilitations:'SIGMA_V2_RC_HABILITATIONS_TEST',habJournal:'SIGMA_V2_HABILITATIONS_JOURNAL_TEST',corrections:'SIGMA_V2_DOSSIERS_HISTORIQUE_TEST',membres:'SIGMA_MEMBRES_CELLULE',membresHist:'SIGMA_V2_MEMBRES_HISTORIQUE_TEST'};
 const DOSSIER_PARTAGES_TABLE='SIGMA_V2_DOSSIERS_PARTAGES_TEST';
 const CENTRAL_ACCESS_TABLE='SIGMA_V2_UI_ACCES_CENTRAL_TEST';
 const CENTRAL_ADMINS_TABLE='SIGMA_V2_ADMINS_CENTRAUX_TEST';
@@ -82,12 +82,14 @@ const editorSpecs = {
  'quick-cr':['Rédiger un compte rendu','quick-cr-entretien'],
  'quick-report':['Rédiger un rapport','quick-r-title'],
  'dossier-share-form':['Créer un partage','dossier-share-email'],
- 'rdv-form':['Planifier un rendez-vous','rdv-debut']
+ 'rdv-form':['Planifier un rendez-vous','rdv-debut'],
+ 'transfer-form':['Demander un transfert','transfer-cible']
 };
 const openedEditors=new Set(), dirtyEditors=new Set();
 function editorAllowed(id){
  const d=selectedDossier();
  if(!quickEnabled())return false;
+ if(id==='transfer-form')return transferAvailable(d);
  if(id==='rdv-form')return Array.isArray(state.rdv)&&Array.isArray(state.rdvHist)&&(ui.tab==='dossiers'?activityWritable(d):(state.dossiers||[]).some(activityWritable));
  if(id==='quick-entretien')return activityWritable(d)&&Array.isArray(state.entretiens)&&Array.isArray(state.cr);
  if(id==='quick-cr')return documentWritable(d)&&Array.isArray(state.cr)&&Array.isArray(state.entretiens)&&state.entretiens.some(e=>sameId(e.Dossier,d?.id)&&documentSeriesWritable(d,state.cr,'Entretien',e.id));
@@ -114,7 +116,7 @@ function closeEditor(id,reset=true){
 }
 function openEditor(id,focus=true){
  if(ui.busy||!editorAllowed(id))return false;
- openedEditors.add(id);if(id==='dossier-share-form')renderDossierPartages(selectedDossier());else if(id==='rdv-form')updateRdvSaveControl();else updateQuickControls();syncEditors();
+ openedEditors.add(id);if(id==='transfer-form')renderTransfer(selectedDossier());else if(id==='dossier-share-form')renderDossierPartages(selectedDossier());else if(id==='rdv-form')updateRdvSaveControl();else updateQuickControls();syncEditors();
  if(focus){$(id).scrollIntoView?.({block:'nearest'});$(editorSpecs[id][1]).focus();}return true;
 }
 function abandonEditors(){
@@ -128,12 +130,12 @@ function initEditors(){
  if(!$('entretien-modify')){const modify=node('button','btn btn-primary','Modifier l’entretien');modify.id='entretien-modify';modify.type='button';modify.hidden=true;$('entretien-edit-form').before(modify);}
  $('entretien-modify').addEventListener('click',()=>{if(!entretienEdit||ui.busy)return;const r=(state.entretiens||[]).find(x=>sameId(x.id,entretienEdit.id)),d=dossierById(entretienEdit.dossier);if(!entretienWritable(r,d))return;$('entretien-read-view').hidden=true;$('entretien-edit-form').hidden=false;$('entretien-edit-fields').disabled=false;$('entretien-edit-save').hidden=false;$('entretien-modify').hidden=true;set($('entretien-feedback'),'Modifiez les champs puis enregistrez. Le dossier et les comptes rendus associés restent inchangés.');$('edit-e-date').focus();});
  for(const [id,[label]] of Object.entries(editorSpecs)){
-  const form=$(id),button=node('button','btn btn-primary editor-open','+ '+label);button.type='button';button.id='open-'+id;button.setAttribute('aria-controls',id);button.hidden=true;
+  const form=$(id),button=$('open-'+id)||node('button','btn btn-primary editor-open','+ '+label);button.type='button';button.id='open-'+id;button.setAttribute('aria-controls',id);button.hidden=true;
   const panel=id==='rdv-form'?$('rdv-editor-panel'):form;
   if(id==='dossier-share-form')$('dossier-share-list').after(form);
   panel.classList.add('editor-collapsed');
   // Le bouton de l’agenda reste dans son conteneur lorsque le formulaire partagé change de rubrique.
-  if(id==='rdv-form')$('agenda-rdv-editor').before(button);else {const list=$({'quick-entretien':'dossier-entretiens','quick-cr':'dossier-cr','quick-report':'dossier-rapports','dossier-share-form':'dossier-share-list'}[id]);list.before(button);}
+  if(id==='transfer-form')form.before(button);else if(id==='rdv-form')$('agenda-rdv-editor').before(button);else {const list=$({'quick-entretien':'dossier-entretiens','quick-cr':'dossier-cr','quick-report':'dossier-rapports','dossier-share-form':'dossier-share-list'}[id]);list.before(button);}
   button.addEventListener('click',()=>{if(id==='rdv-form'){resetRdv();renderAgenda();}openEditor(id);});
   const cancel=node('button','btn btn-light editor-cancel','Annuler');cancel.type='button';
   if(id==='rdv-form'){$('rdv-reset').textContent='Annuler';}else{form.append(cancel);cancel.addEventListener('click',()=>{if(ui.busy||(dirtyEditors.has(id)&&!confirm('Abandonner cette saisie ?')))return;closeEditor(id);if(id==='quick-cr'){ui.previousEntretien='';quickVersionHint();updateQuickControls();}if(id==='dossier-share-form')renderDossierPartages(selectedDossier());button.focus();});}
@@ -165,7 +167,7 @@ renderUpcoming();const recent=$('recent-dossiers');recent.replaceChildren();if(s
 const area=$('status-stats');area.replaceChildren();const stats=C.stats(state);if(!stats){empty(area,'Statistiques indisponibles : accès à la table dossiers refusé.');return;}if(!stats.total){empty(area,'Aucune donnée accessible.');return;}for(const [key,value] of Object.entries(stats.byStatus)){const row=node('div','status-row');row.append(node('span',null,key));const bar=node('span','bar'),inner=document.createElement('i');inner.style.width=(100*value/stats.total)+'%';bar.append(inner);row.append(bar,node('span','value',value));area.append(row);}}
 function renderDossiers(){set($('dossier-scope-note'),$('dossier-scope').value==='sent'?'Dossiers dont vous avez préparé un partage, y compris les partages révoqués.':$('dossier-scope').value==='received'?'Dossiers accessibles en consultation dont vous n’êtes pas identifié comme référent.':'Dossiers dont vous êtes le référent (ou accessibles en tant qu’Owner).');const list=$('dossiers');list.replaceChildren();const rows=visibleDossiers();set($('dossier-counter'),rows===null?'Indisponible':rows.length+' dossier(s)');if(rows===null){empty(list,'Accès non autorisé à la table dossiers. Aucun contournement de la sécurité.');$('dossier-detail').hidden=true;return;}if(!rows.length)empty(list,'Aucun dossier pour ces critères.');for(const d of rows)list.append(item(dossierLabel(d.id),'Création : '+(d.Date_Creation?traceDate(d.Date_Creation):'Non tracée')+' · Saisine : '+C.formatDate(d.Date_Saisine)+' · Canal : '+val(d.Canal)+' · Référent : '+val(d.EC_Email,'Non affecté'),manageDossier(d)?val(d.Statut,'Nouveau'):collaborateDossier(d)?'Collaboration':'Lecture seule',()=>showDossier(d.id)));renderDetail();}
 function pill(label,value){return node('span',null,label+' : '+val(value));}
-function renderDetail(){const section=$('dossier-detail');const d=(state.dossiers||[]).find(x=>x.id===ui.selected);section.hidden=!d;if(!d)return;set($('dossier-title'),dossierLabel(d.id));const props=$('dossier-meta');props.replaceChildren();props.append(pill('Statut',d.Statut),pill('Canal',d.Canal),pill('Date de saisine',C.formatDate(d.Date_Saisine)),pill('Date de création',d.Date_Creation?traceDate(d.Date_Creation):'Non tracée'),pill('EC affecté',d.EC_Email));$('initial-open').hidden=!initialWritable(d);const startButton=$('dossier-start');if(startButton){startButton.hidden=!canStartDossier(d);startButton.disabled=ui.busy;}for(const label of dossierTrace(d))props.append(node('span',null,label));props.append(pill('Heure de saisine',d.Heure_Saisine),pill('Auteur du contact',d.Auteur_Contact),pill('Objet initial',d.Objet_Initial));const related=C.relation(state,d.id);
+function renderDetail(){const section=$('dossier-detail');const d=(state.dossiers||[]).find(x=>x.id===ui.selected);section.hidden=!d;if(!d){for(const id of ['suivi-avancement','suivi-referent','transfer-history','transfer-requests'])$(id).replaceChildren();$('transfer-cible').replaceChildren();$('transfer-form').reset();return;}set($('dossier-title'),dossierLabel(d.id));const props=$('dossier-meta');props.replaceChildren();props.append(pill('Statut',d.Statut),pill('Canal',d.Canal),pill('Date de saisine',C.formatDate(d.Date_Saisine)),pill('Date de création',d.Date_Creation?traceDate(d.Date_Creation):'Non tracée'),pill('EC affecté',d.EC_Email));$('initial-open').hidden=!initialWritable(d);const startButton=$('dossier-start');if(startButton){startButton.hidden=!canStartDossier(d);startButton.disabled=ui.busy;}for(const label of dossierTrace(d))props.append(node('span',null,label));props.append(pill('Heure de saisine',d.Heure_Saisine),pill('Auteur du contact',d.Auteur_Contact),pill('Objet initial',d.Objet_Initial));const related=C.relation(state,d.id);
 const e=$('dossier-entretiens');e.replaceChildren();if(state.entretiens===null)empty(e,'Entretiens non accessibles.');else if(!related.entretiens.length)empty(e,'Aucun entretien accessible.');else for(const r of C.sorted(related.entretiens))e.append(item(childLabel(r,'Entretien #'+r.id),'Date : '+C.formatDate(r.Date_Entretien)+' · '+entretienTrace(r),val(r.Type,'Entretien'),()=>openEntretien(r.id)));
 const cr=$('dossier-cr');renderCRGroups(cr,related.entretiens,related.cr);
 const rs=$('dossier-rapports');rs.replaceChildren();if(state.rapports===null)empty(rs,'Rapports non accessibles.');else if(!related.rapports.length)empty(rs,'Aucun rapport accessible.');else for(const r of [...related.rapports].sort((a,b)=>Number(b.Version)-Number(a.Version)))rs.append(item(childLabel(r,'Rapport v'+val(r.Version)),val(r.Titre,'Sans titre')+' · '+versionTrace(r),val(r.Etat,'État inconnu'),()=>openDocument('rapports',r.id)));
@@ -896,45 +898,48 @@ async function revokeDossierPartage(d,r){if(ui.busy||!quickEnabled()||shareCandi
  await reload();set(msg,'Partage révoqué.');
  }catch(e){set(msg,'Révocation refusée : '+(e?.message||e));}finally{ui.busy=false;const current=(state.dossiers||[]).find(x=>Number(x.id)===Number(ui.selected));if(current)renderDossierPartages(current);syncEditors();}
 }
-function eligibleTransferEmails(){
- // Le référentiel peut être invisible via ACL. Aucun email inventé ni paramètre de contournement.
- const list=state.habilitations;if(!Array.isArray(list))return [];
- const emails=new Set();
- for(const x of list){
-  const mail=String(x.EC_Email||x.Email||'').trim().toLowerCase();
-  if(!validEmail(mail))continue;
-  // Aucun transfert sans champ de validation explicite fourni et contrôlé dans les ACL du référentiel.
-  if(x.EC_Habilite_ACL!==true)continue;
-  emails.add(mail);
+// V2.8.0.9 : circuit de demande sans élargissement des droits d'affectation.
+const TRANSFER_REQUEST_TABLE='SIGMA_V2_TRANSFERTS_DEMANDES_TEST';
+function eligibleTransferEmails(d,cells=state.cellules){
+ const c=(cells||[]).find(x=>sameId(x.id,d?.Cellule));
+ if(!c||c.Archivee!==false)return [];
+ return [...new Set(shareEmails(c.EC_Emails_ACL))].filter(e=>e!==d.EC_Email).sort();
+}
+function transferOpenDossier(d){return Boolean(d&&['Nouveau','En cours'].includes(d.Statut)&&!d.Date_Cloture&&!d.Rapport_Signe_Declarant);}
+function transferAvailable(d){return Boolean(quickEnabled()&&manageDossier(d)&&transferOpenDossier(d)&&Array.isArray(state.transferRequests)&&eligibleTransferEmails(d).length&&(ui.techOwner?Array.isArray(state.affectations):d.EC_Habilite_ACL===true));}
+function renderTransfer(d){
+ if(!d)return;
+ const av=$('suivi-avancement');av.replaceChildren(pill('Statut',d.Statut),pill('Création',traceDate(d.Date_Creation)),pill('Saisine',C.formatDate(d.Date_Saisine)),pill('Clôture',d.Date_Cloture?C.formatDate(d.Date_Cloture):'Non clôturé'),pill('Rapport signé',d.Rapport_Signe_Declarant===true?'Oui':'Non'),pill('Anonymat levé',d.Anonymat_Leve===true?'Oui':'Non'));
+ for(const [label,rows] of [['Entretiens',state.entretiens],['Rendez-vous',state.rdv],['Versions de rapports',state.rapports]])av.append(pill(label,Array.isArray(rows)?String(rows.filter(r=>sameId(r.Dossier,d.id)).length):'Indisponible'));
+ const ref=$('suivi-referent');ref.replaceChildren(pill('Référent actuel',d.EC_Email||'Non affecté'));
+ const box=$('transfer-section'),sel=$('transfer-cible');box.hidden=!manageDossier(d);if(box.hidden)return;
+ const prev=sel.value,candidates=eligibleTransferEmails(d);sel.replaceChildren(new Option('— Choisir un EC habilité —',''));for(const email of candidates)sel.add(new Option(email,email));if(candidates.includes(prev))sel.value=prev;
+ const enabled=transferAvailable(d)&&!ui.busy;$('transfer-save').disabled=!enabled;$('open-transfer-form').textContent=ui.techOwner?'Transférer le dossier (Owner TEST)':'Demander un transfert';
+ set($('transfer-message'),!Array.isArray(state.transferRequests)?'Circuit de demandes indisponible : installer la table et ses ACL.':!transferOpenDossier(d)?'Transfert non proposé pour un dossier clôturé ou un rapport signé.':!candidates.length?'Aucun autre EC actif et habilité dans cette cellule.':ui.techOwner?'Owner TEST : vérifier la demande avant application. Les partages actifs et préparations documentaires non révoquées seront révoqués.':'Sélectionnez un EC de votre cellule. La demande ne change aucun droit avant application par Owner TEST.');
+ const req=$('transfer-requests');req.replaceChildren();
+ if(Array.isArray(state.transferRequests)){
+  const rows=state.transferRequests.filter(r=>sameId(r.Dossier,d.id));if(!rows.length)empty(req,'Aucune demande de transfert.');
+  for(const r of rows){const el=item('Demande #'+r.id+' · '+val(r.Nouvel_EC),val(r.Motif)+' · '+traceDate(r.Date_Demande),val(r.Statut));if(ui.techOwner&&r.Statut==='En attente'){for(const [label,apply] of [['Appliquer',true],['Refuser',false]]){const b=node('button','btn btn-light',label);b.type='button';b.disabled=ui.busy;b.addEventListener('click',()=>resolveTransfer(r,apply));el.append(b);}}req.append(el);}
  }
- return [...emails].sort();
+ const hist=$('transfer-history');hist.replaceChildren();if(!Array.isArray(state.affectations))empty(hist,'Historique des affectations réservé à Owner ou indisponible.');else{const rows=state.affectations.filter(r=>sameId(r.Dossier,d.id));if(!rows.length)empty(hist,'Aucun transfert enregistré.');for(const r of [...rows].sort((a,b)=>b.id-a.id))hist.append(item(val(r.Ancien_EC)+' → '+val(r.Nouvel_EC),traceDate(r.Date_Declaration)+' · '+val(r.Motif)+' · Auteur : '+val(r.Auteur_Email,'non tracé'),'Transfert'));}
 }
-function renderTransfer(d){const box=$('transfer-section'),sel=$('transfer-cible');box.hidden=!manageDossier(d);if(!manageDossier(d))return;
- const prev=sel.value;sel.replaceChildren(new Option('— Choisir un EC habilité —',''));
- // Le contrôle de cellule est obligatoirement coté Grist. Une liste visible n'autorise jamais un transfert.
- for(const mail of eligibleTransferEmails().filter(e=>e!==String(d.EC_Email||'').toLowerCase()))sel.add(new Option(mail,mail));
- if([...sel.options].some(o=>o.value===prev))sel.value=prev;
- const enabled=window.SIGMA_ESPACE_CONFIG?.ENABLE_DIRECT_TRANSFER_TEST===true&&quickEnabled()&&Array.isArray(state.affectations)&&!ui.busy&&sel.options.length>1;
- $('transfer-save').disabled=!enabled;
- set($('transfer-message'),enabled?'Transfert TEST soumis aux ACL Grist (dossier, EC cible, cellule et historique).':'Transfert direct désactivé jusqu’à validation des règles ACL spécifiques. Utiliser le circuit existant.');
+async function freshTransfer(d){const [ds,cs,rs,ps,hs,es,crs,rps,cp,cv,rp,rv]=await Promise.all(['SIGMA_V2_DOSSIERS_TEST','SIGMA_CELLULES',TRANSFER_REQUEST_TABLE,DOSSIER_PARTAGES_TABLE,'SIGMA_V2_AFFECTATIONS_TEST','SIGMA_V2_ENTRETIENS_TEST','SIGMA_V2_COMPTES_RENDUS_TEST','SIGMA_V2_RAPPORTS_TEST','SIGMA_V2_CR_PARTAGES_TEST','SIGMA_V2_CR_PARTAGES_REVOCATIONS_TEST','SIGMA_V2_PARTAGES_PREPARATIONS_TEST','SIGMA_V2_PARTAGES_REVOCATIONS_TEST'].map(t=>grist.docApi.fetchTable(t)));const fresh=C.rows(ds).find(x=>sameId(x.id,d.id));if(!fresh||fresh.EC_Email!==d.EC_Email||!sameId(fresh.Cellule,d.Cellule)||!transferOpenDossier(fresh))throw Error('Dossier modifié ou non transférable. Actualisez.');return {fresh,cells:C.rows(cs),requests:C.rows(rs),shares:C.rows(ps),history:C.rows(hs),entretiens:C.rows(es),cr:C.rows(crs),rapports:C.rows(rps),crPreps:C.rows(cp),crRev:C.rows(cv),reportPreps:C.rows(rp),reportRev:C.rows(rv)};}
+async function ownerTransfer(d,target,motif,request){
+ if(!ui.techOwner)throw Error('Application réservée à Owner TEST.');
+ const f=await freshTransfer(d);if(!eligibleTransferEmails(f.fresh,f.cells).includes(target))throw Error('EC cible non habilité dans la cellule.');
+ if(request){const r=f.requests.find(x=>sameId(x.id,request.id));if(!r||r.Statut!=='En attente'||r.Ancien_EC!==f.fresh.EC_Email||r.Nouvel_EC!==target||r.Motif!==motif||r.Demande_Valide_ACL!==true)throw Error('Demande obsolète ou non valide.');}
+ const now=Math.floor(Date.now()/1000),payload=window.SigmaAffectations.prepare(f.fresh,target,motif,now);
+ const actions=[payload.update,payload.history];
+ const entretienIds=new Set(f.entretiens.filter(x=>sameId(x.Dossier,d.id)).map(x=>Number(x.id)));
+ const crIds=new Set(f.cr.filter(x=>entretienIds.has(Number(x.Entretien))).map(x=>Number(x.id)));
+ const reportIds=new Set(f.rapports.filter(x=>sameId(x.Dossier,d.id)).map(x=>Number(x.id)));
+ for(const [preps,revs,ids,field,table] of [[f.crPreps,f.crRev,crIds,'Compte_Rendu','SIGMA_V2_CR_PARTAGES_REVOCATIONS_TEST'],[f.reportPreps,f.reportRev,reportIds,'Rapport','SIGMA_V2_PARTAGES_REVOCATIONS_TEST']])for(const p of preps.filter(x=>ids.has(Number(x[field]))&&x.Action==='Preparation'&&!revs.some(r=>sameId(r.Preparation,x.id))))actions.push(['AddRecord',table,null,{Preparation:p.id,Action:'Revocation',...(field==='Compte_Rendu'?{Compte_Rendu:p.Compte_Rendu}:{})}]);
+ for(const r of f.shares.filter(x=>sameId(x.Dossier,d.id)&&x.Actif===true))actions.push(['UpdateRecord',DOSSIER_PARTAGES_TABLE,r.id,{Actif:false,Date_Revocation:now}]);
+ for(const r of f.requests.filter(x=>sameId(x.Dossier,d.id)&&x.Statut==='En attente'))actions.push(['UpdateRecord',TRANSFER_REQUEST_TABLE,r.id,{Statut:request&&sameId(r.id,request.id)?'Appliquée':'Obsolète'}]);
+ await grist.docApi.applyUserActions(actions);
 }
-async function saveTransfer(ev){ev.preventDefault();const msg=$('transfer-message');
- try{
-  if(window.SIGMA_ESPACE_CONFIG?.ENABLE_DIRECT_TRANSFER_TEST!==true||!quickEnabled()||ui.busy)throw Error('Transfert TEST désactivé.');
-  const d=(state.dossiers||[]).find(x=>Number(x.id)===Number(ui.selected));if(!manageDossier(d))throw Error('Dossier non modifiable.');
-  const target=$('transfer-cible').value.toLowerCase(),motif=$('transfer-motif').value.trim();
-  if(!eligibleTransferEmails().includes(target))throw Error('Écoutant non proposé par le référentiel.');
-  if(motif.length<8||motif.length>500)throw Error('Motif : 8 à 500 caractères.');
-  if(!Array.isArray(state.affectations))throw Error('Historique inaccessible.');
-  const fresh=C.rows(await grist.docApi.fetchTable('SIGMA_V2_DOSSIERS_TEST')).find(x=>Number(x.id)===Number(d.id));
-  if(!fresh||fresh.EC_Email!==d.EC_Email)throw Error('Dossier modifié : actualiser.');
-  if(!confirm('Transférer ce dossier au nouvel EC et enregistrer l’historique ?'))return;
-  ui.busy=true;
-  const payload=window.SigmaAffectations.prepare(fresh,target,motif,Date.now()/1000);
-  await grist.docApi.applyUserActions([payload.update,payload.history]);
-  $('transfer-form').reset();ui.selected=null;await reload();set(msg,'Transfert enregistré. Recontrôler les droits des deux EC.');
- }catch(e){set(msg,'Transfert refusé : '+(e?.message||e));}finally{ui.busy=false;const d=(state.dossiers||[]).find(x=>Number(x.id)===Number(ui.selected));if(d)renderTransfer(d);}
-}
+async function resolveTransfer(r,apply){if(ui.busy||!ui.techOwner||!quickEnabled())return;const d=selectedDossier();if(!d||!sameId(r.Dossier,d.id)||!confirm(apply?'Appliquer le transfert et révoquer les partages actifs et préparations documentaires du dossier ?':'Refuser cette demande ?'))return;ui.busy=true;try{if(apply)await ownerTransfer(d,r.Nouvel_EC,r.Motif,r);else{const rows=C.rows(await grist.docApi.fetchTable(TRANSFER_REQUEST_TABLE));if(!rows.some(x=>sameId(x.id,r.id)&&x.Statut==='En attente'))throw Error('Demande déjà traitée.');await grist.docApi.applyUserActions([['UpdateRecord',TRANSFER_REQUEST_TABLE,r.id,{Statut:'Refusée'}]]);}await reload();status(apply?'Transfert enregistré.':'Demande refusée.');}catch(e){status('Action refusée : '+e.message,true);}finally{ui.busy=false;renderTransfer(selectedDossier());syncEditors();}}
+async function saveTransfer(ev){ev.preventDefault();if(ui.busy)return;const d=selectedDossier(),target=$('transfer-cible').value,motif=$('transfer-motif').value.trim();try{if(!transferAvailable(d)||!eligibleTransferEmails(d).includes(target))throw Error('Transfert indisponible ou cible non habilitée.');if(motif.length<8||motif.length>500)throw Error('Motif : 8 à 500 caractères.');if(!confirm(ui.techOwner?'Transférer et révoquer les partages actifs et préparations documentaires ?':'Envoyer la demande de transfert ? Aucun droit ne change immédiatement.'))return;ui.busy=true;if(ui.techOwner)await ownerTransfer(d,target,motif,null);else{await grist.docApi.applyUserActions([['AddRecord',TRANSFER_REQUEST_TABLE,null,{Dossier:d.id,Ancien_EC:d.EC_Email,Nouvel_EC:target,Motif:motif,Statut:'En attente'}]]);}closeEditor('transfer-form');await reload();status(ui.techOwner?'Transfert enregistré.':'Demande de transfert enregistrée.');}catch(e){set($('transfer-message'),'Action refusée : '+e.message);}finally{ui.busy=false;const d=selectedDossier();if(d){const message=$('transfer-message').textContent;renderTransfer(d);if(message.startsWith('Action refusée'))set($('transfer-message'),message);}syncEditors();}}
 function appointmentAllowed(r){return Array.isArray(state.dossiers)&&state.dossiers.some(d=>Number(d.id)===Number(r.Dossier));}
 function rdvDate(t){return Number.isFinite(Number(t))&&Number(t)>0?new Date(Number(t)*1000):null;}
 function formatRdv(t){const d=rdvDate(t);return d?d.toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short',timeZone:'Europe/Paris'}):'Date invalide';}
