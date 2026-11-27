@@ -12,7 +12,7 @@ function show(entry){clearPreview();if(!entry)return;const {p,report,assessment}
  text($('preview-title'),report.Titre||'Rapport sans titre');
  text($('preview-meta'),(report.Identifiant_Metier||'Rapport #'+report.id+' · version '+report.Version+' · dossier #'+report.Dossier));
  text($('preview-dest'),'Destinataire prévu : '+p.Destinataire_Email+' · date limite : '+readableDate(p.Date_Expiration));
- text($('preview-content'),report.Texte||'');
+ window.SigmaRedaction ? SigmaRedaction.render($('preview-content'),report.Texte||'') : text($('preview-content'),report.Texte||'');
  text($('preview-state'),'Contrôles internes satisfaits — aucun accès externe activé');$('preview-state').className='ok';
  $('preview-wrap').hidden=false;
 }
