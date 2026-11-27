@@ -29,14 +29,22 @@ function syncNavGroups(){
   group.hidden=!visible.length;
  }
 }
+function roleNavigation(){
+ const cells=Array.isArray(state.cellules)?state.cellules:[];
+ const personal=shareIdentity();
+ const ec=cells.some(c=>cellActive(c)&&c.Composition_Lecture_UI_ACL===true&&personal&&shareEmails(c.EC_Emails_ACL).includes(personal));
+ const readable=ui.techOwner||ec||(Array.isArray(state.dossiers)&&state.dossiers.length>0);
+ const rc=managedRcCells().length>0;
+ const create=!!authorizedEcCells()?.length;
+ return {accueil:true,nouveau:create,dossiers:readable,agenda:readable,entretiens:readable,cr:readable,rapports:readable,rc:rc||(Array.isArray(state.rc)&&state.rc.length>0), 'gestion-ec':rc,organisation:orgCells().length>0,composition:compositionCells().length>0,administration:ui.centralAllowed,outils:ui.techOwner||create||rc};
+}
 function refreshRoleNavigation(){
- const allowed={rc:managedRcCells().length>0 || (ui.techOwner&&Array.isArray(state.rc)&&state.rc.length>0), 'gestion-ec':managedRcCells().length>0};
- for(const [tab,ok] of Object.entries(allowed)){
-  const b=document.querySelector('#nav [data-tab="'+tab+'"]');b.hidden=!ok;b.disabled=!ok;
+ const allowed=roleNavigation();
+ for(const b of document.querySelectorAll('#nav [data-tab], [data-goto]')){
+  const ok=allowed[b.dataset.tab||b.dataset.goto]===true;b.hidden=!ok;b.disabled=!ok;b.setAttribute('aria-hidden',String(!ok));
  }
  syncNavGroups();
- const current=document.querySelector('#nav [data-tab="'+ui.tab+'"]');
- if(current?.hidden)nav('accueil');
+ if(!allowed[ui.tab]){clearDrafts();resetRdv();$('new-person-list').replaceChildren();$('new-person-block').open=false;orgClear();closeComposition();ui.tab='accueil';nav('accueil');}
 }
 function nav(tab){const target=document.querySelector('#nav [data-tab="'+tab+'"]');if(!target||target.hidden||target.disabled)return;if(ui.tab==='nouveau'&&tab!=='nouveau'&&$('new-person-list').children.length){if(ui.busy||!confirm('Abandonner les fiches personnes non enregistrées ?'))return;$('new-person-list').replaceChildren();$('new-person-block').open=false;}if(ui.tab==='organisation'&&tab!=='organisation'){if(ui.busy)return;if(orgEdit&&!confirm('Quitter la fiche d’organisation ? Les modifications non enregistrées seront perdues.'))return;orgClear();}if(tab!=='dossiers')clearPersons();if(ui.tab==='composition'&&tab!=='composition'&&compositionEdit&&!ui.busy&&!confirm('Abandonner la fiche membre en cours ?'))return;if(ui.tab==='composition'&&tab!=='composition')closeComposition();if(tab==='administration'&&!ui.centralAllowed){status('Rubrique réservée à l’administration centrale. Accès non autorisé.',true);return;}ui.tab=tab;const group=target.closest('.nav-group');if(group)group.open=true;for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===tab;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');}for(const sec of document.querySelectorAll('.tab'))sec.hidden=sec.id!=='tab-'+tab;const names={organisation:['Fiche d’organisation','Organisation annuelle de la cellule'],composition:['Composition de ma cellule','Membres, fonctions, moyens et formations'],accueil:['Vue d’ensemble','Synthèse des informations accessibles'],rc:['Supervision RC','Synthèse non nominative de la cellule autorisée'],administration:['Administration centrale','Gestion des cellules et des responsables — habilitation centrale métier'], 'gestion-ec':['Gestion des écoutants','Habiliter les EC dans les cellules déléguées · RC'],dossiers:['Dossiers','Consultation des dossiers et de leurs éléments liés'],entretiens:['Entretiens','Créer et consulter les entretiens'],cr:['Comptes rendus','Consulter et préparer les versions accessibles'],rapports:['Rapports','Consulter et préparer les versions accessibles'],outils:['Modules métier','Accéder aux actions disponibles dans SIGMA TEST'],nouveau:['Nouveau signalement','Création RC ou EC : attribution par formule Grist'],agenda:['Mon agenda','Rendez-vous liés aux dossiers autorisés']};set($('page-title'),names[tab][0]);set($('page-subtitle'),names[tab][1]);render();}
 // V2.7.0 : administration centrale pour Owner technique ou administrateurs
@@ -79,7 +87,7 @@ function renderUpcoming(){
   root.append(item(formatRdv(r.Debut),C.dossierLabel(r.Dossier)+' · '+val(r.Modalite)+' · '+rdvTrace(r),val(r.Statut,'Prévu'),()=>{nav('agenda');$('agenda-date').value=localDate(rdvDate(r.Debut));renderAgenda();}));
  }
 }
-function renderHome(){const m=$('metrics');m.replaceChildren();m.append(metric('Dossiers',count(state,'dossiers'),'Autorisés'),metric('Entretiens',count(state,'entretiens'),'Accessibles'),metric('Comptes rendus',count(state,'cr'),'Versions visibles'),metric('Rapports',count(state,'rapports'),'Internes visibles'));
+function renderHome(){const allowed=roleNavigation();$('home-dossier-content').hidden=!allowed.dossiers;const shortcuts=$('home-profile-links');shortcuts.replaceChildren();const entries=[['administration','Administration centrale'],['rc','Supervision de ma cellule'],['organisation','Fiche d’organisation'],['composition','Composition de ma cellule'],['gestion-ec','Gestion des écoutants'],['nouveau','Nouveau signalement']];for(const [tab,label] of entries){if(!allowed[tab])continue;shortcuts.append(item(label,'Accéder à votre espace autorisé',null,()=>nav(tab)));}const any=Object.entries(allowed).some(([key,ok])=>key!=='accueil'&&ok);set($('home-profile-message'),any?'Vos rubriques sont adaptées aux habilitations accessibles dans Grist.':'Aucune rubrique métier accessible. Contactez votre gestionnaire si nécessaire.');const m=$('metrics');m.replaceChildren();m.append(metric('Dossiers',count(state,'dossiers'),'Autorisés'),metric('Entretiens',count(state,'entretiens'),'Accessibles'),metric('Comptes rendus',count(state,'cr'),'Versions visibles'),metric('Rapports',count(state,'rapports'),'Internes visibles'));
 renderUpcoming();const recent=$('recent-dossiers');recent.replaceChildren();if(state.dossiers===null)empty(recent,'Table dossiers inaccessible : ne pas déduire le nombre de dossiers de la cellule.');else if(!state.dossiers.length)empty(recent,'Aucun dossier accessible.');else for(const d of C.sorted(state.dossiers).slice(0,6))recent.append(item(C.dossierLabel(d.id),'Canal : '+val(d.Canal)+' · EC : '+val(d.EC_Email,'Non affecté'),val(d.Statut,'Nouveau'),()=>showDossier(d.id)));
 const area=$('status-stats');area.replaceChildren();const stats=C.stats(state);if(!stats){empty(area,'Statistiques indisponibles : accès à la table dossiers refusé.');return;}if(!stats.total){empty(area,'Aucune donnée accessible.');return;}for(const [key,value] of Object.entries(stats.byStatus)){const row=node('div','status-row');row.append(node('span',null,key));const bar=node('span','bar'),inner=document.createElement('i');inner.style.width=(100*value/stats.total)+'%';bar.append(inner);row.append(bar,node('span','value',value));area.append(row);}}
 function renderDossiers(){set($('dossier-scope-note'),$('dossier-scope').value==='sent'?'Dossiers dont vous avez préparé un partage, y compris les partages révoqués.':$('dossier-scope').value==='received'?'Dossiers accessibles en consultation dont vous n’êtes pas identifié comme référent.':'Dossiers dont vous êtes le référent (ou accessibles en tant qu’Owner).');const list=$('dossiers');list.replaceChildren();const rows=visibleDossiers();set($('dossier-counter'),rows===null?'Indisponible':rows.length+' dossier(s)');if(rows===null){empty(list,'Accès non autorisé à la table dossiers. Aucun contournement de la sécurité.');$('dossier-detail').hidden=true;return;}if(!rows.length)empty(list,'Aucun dossier pour ces critères.');for(const d of rows)list.append(item(C.dossierLabel(d.id),'Canal : '+val(d.Canal)+' · Référent : '+val(d.EC_Email,'Non affecté'),manageDossier(d)?val(d.Statut,'Nouveau'):collaborateDossier(d)?'Collaboration':'Lecture seule',()=>showDossier(d.id)));renderDetail();}
@@ -252,7 +260,7 @@ async function saveQuickCR(ev){ev.preventDefault();if(ui.busy||!quickEnabled()||
  $('quick-cr-texte').value='';await reload();showDossier(dossierId,'cr');
  const verified=E.versionState(state.cr||[],entretienId);quickMessage(verified.duplicateVersions.length?'ALERTE : doublons de versions détectés, suspendre les écritures.':'Compte rendu enregistré en brouillon — version '+payload.Version+'.',!!verified.duplicateVersions.length);
  }catch(err){quickMessage('Compte rendu refusé : '+(err?.message||err),true);}finally{quickBusy(false);}}
-function fillEntry(kind){const s=$('entry-'+kind),prior=s.value;s.replaceChildren(new Option('— Choisir un dossier accessible —',''));for(const d of C.sorted(state.dossiers).filter(kind==='entretiens'?activityWritable:documentWritable))s.add(new Option(C.dossierLabel(d.id)+' · '+val(d.Statut),String(d.id)));if([...s.options].some(o=>o.value===prior))s.value=prior;const b=document.querySelector('[data-entry="'+kind+'"]');b.disabled=!quickEnabled()||!s.value||ui.busy;}
+function fillEntry(kind){const s=$('entry-'+kind),prior=s.value;s.replaceChildren(new Option('— Choisir un dossier accessible —',''));for(const d of C.sorted(state.dossiers).filter(kind==='entretiens'?activityWritable:documentWritable))s.add(new Option(C.dossierLabel(d.id)+' · '+val(d.Statut),String(d.id)));if([...s.options].some(o=>o.value===prior))s.value=prior;const b=document.querySelector('[data-entry="'+kind+'"]');b.disabled=!quickEnabled()||!s.value||ui.busy;const panel=b.closest('.panel');if(panel)panel.hidden=!s.options.length||s.options.length===1||!quickEnabled();}
 function documentRecord(kind,id){const r=(state[kind]||[]).find(x=>Number(x.id)===Number(id));if(!r)return null;const e=kind==='cr'?(state.entretiens||[]).find(x=>Number(x.id)===Number(r.Entretien)):null;const d=(state.dossiers||[]).find(x=>Number(x.id)===Number(kind==='cr'?e?.Dossier:r.Dossier));return d?{r,d,e}:null;}
 function documentCopyWritable(x,kind){return Boolean(x&&documentSeriesWritable(x.d,state[kind],kind==='cr'?'Entretien':'Dossier',kind==='cr'?x.e?.id:x.d.id)&&(manageDossier(x.d)||x.r.Etat==='Brouillon')&&x.d.EC_Habilite_ACL===true&&(kind!=='rapports'||window.SIGMA_RAPPORTS_CONFIG?.TEST_WRITES_ENABLED));}
 function resetDocumentPrompt(){set($('document-feedback'),'');$('document-confirm-copy').hidden=true;}
@@ -294,7 +302,7 @@ function showReport(id){const r=(state.rapports||[]).find(x=>Number(x.id)===Numb
 function renderRapports(){fillEntry('rapports');const list=$('rapports-list');list.replaceChildren();const arr=state.rapports;set($('rapport-counter'),arr===null?'Indisponible':arr.length+' rapport(s)');if(arr===null){$('rapport-detail').hidden=true;empty(list,'Rapports non accessibles selon vos habilitations.');return;}if(!arr.length){$('rapport-detail').hidden=true;empty(list,'Aucun rapport accessible.');return;}for(const r of C.sorted(arr))list.append(item('Rapport #'+r.id+' · version '+val(r.Version),C.dossierLabel(r.Dossier)+' · '+val(r.Titre,'Sans titre')+' · '+versionTrace(r),val(r.Etat,'État inconnu'),()=>openDocument('rapports',r.id)));const selected=arr.find(x=>x.id===ui.report);if(selected){$('rapport-detail').hidden=false;set($('rapport-titre'),'Rapport #'+selected.id+' · version '+val(selected.Version)+' · '+val(selected.Titre,'Sans titre'));set($('rapport-texte'),selected.Texte||'Aucun contenu accessible.');}else $('rapport-detail').hidden=true;}
 function configLink(title){const x=(window.SIGMA_ESPACE_CONFIG?.links||[]).find(x=>x.title===title);if(!x||typeof x.url!=='string')return null;try{const u=new URL(x.url);return u.protocol==='https:'?u.href:null;}catch{return null;}}
 function makeLink(title,url,cls){const a=node('a',cls,title);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
-function renderTools(){const root=$('module-links');root.replaceChildren();for(const l of window.SIGMA_ESPACE_CONFIG?.links||[]){const url=configLink(l.title);const card=url?makeLink('',url,'tool'):node('div','tool unconfigured');card.append(node('strong',null,l.title),node('small',null,l.description||''),node('small',null,url?'Ouvrir le module ↗':'Lien non configuré dans espace-metier-config.js'));root.append(card);}if(!root.childNodes.length)empty(root,'Aucun module configuré.');}
+function renderTools(){const root=$('module-links');root.replaceChildren();for(const l of window.SIGMA_ESPACE_CONFIG?.links||[]){if(!ui.techOwner&&(l.title==='Organisation et habilitations'? !managedRcCells().length:!authorizedEcCells()?.length))continue;const url=configLink(l.title);const card=url?makeLink('',url,'tool'):node('div','tool unconfigured');card.append(node('strong',null,l.title),node('small',null,l.description||''),node('small',null,url?'Ouvrir le module ↗':'Lien non configuré dans espace-metier-config.js'));root.append(card);}if(!root.childNodes.length)empty(root,'Aucun module configuré.');}
 function positiveCount(value){const n=Number(value);return Number.isSafeInteger(n)&&n>=0?n:null;}
 function renderRC(){
  const root=$('rc-syntheses'),feedback=$('rc-feedback');root.replaceChildren();feedback.replaceChildren();
@@ -332,14 +340,8 @@ function activeHabilitation(row){
  return row&&row.Actif===true&&(!row.Date_Debut||Number(row.Date_Debut)<=today)&&(!row.Date_Fin||Number(row.Date_Fin)>=today);
 }
 function managedRcCells(){
- if(!Array.isArray(state.rcHabilitations)||!Array.isArray(state.cellules))return [];
- const active=state.rcHabilitations.filter(h=>h.Role==='RC'&&activeHabilitation(h));
- const ownerEmailSet=new Set(active.map(x=>String(x.Email||'').trim().toLowerCase()).filter(Boolean));
- // Un seul compte RC doit être visible via ses ACL. Pour Owner, affichage en consultation;
- // aucune délégation n'est inférée du rôle Owner dans cette fonction.
- if(ownerEmailSet.size!==1)return [];
- const ids=new Set(active.map(x=>Number(x.Cellule)));
- return state.cellules.filter(c=>cellActive(c)&&ids.has(Number(c.id)));
+ if(ui.techOwner||!Array.isArray(state.cellules))return [];
+ return state.cellules.filter(c=>c.Archivee===false&&c.Composition_RC_UI_ACL===true);
 }
 // V2.6.9 — création contrôlée d'une cellule par l'administration centrale.
 // Le widget ne transmet que Code/Nom ; l'ACL Grist sur SIGMA_CELLULES reste obligatoire.
@@ -696,28 +698,9 @@ function validEmail(e){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));}
 function cellLabel(c){return String(c?.Nom||c?.Code||('Cellule #'+c?.id));}
 function isoToEpoch(s){if(!s)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(s))throw Error('Date invalide.');const date=new Date(s+'T00:00:00Z');if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==s)throw Error('Date invalide.');return Math.floor(date.getTime()/1000);}
 function authorizedEcCells(){
- // Pour un compte métier non central, les lignes RC sont limitées à son identité par ACL.
- // Un RC voit aussi les habilitations des EC de sa cellule : ne jamais en déduire son identité.
- if(ui.centralAllowed||ui.techOwner)return [];
- if(!Array.isArray(state.rcHabilitations)||!Array.isArray(state.habilitations)||!Array.isArray(state.cellules))return null;
- const rc=state.rcHabilitations.filter(h=>h.Role==='RC');
- const ec=state.habilitations.filter(h=>h.Role==='EC');
- const source=rc.length?rc:ec;
- const emails=new Set(source.map(h=>String(h.Email||'')).filter(Boolean));
- if(emails.size!==1)return [];
- const email=[...emails][0];
- if(!validEmail(email))return [];
- const eligible=new Set();
- for(const rows of [rc,ec]){
-  const counts=new Map();
-  for(const h of rows){
-   const id=Number(h.Cellule);
-   if(h.Email!==email||!activeHabilitation(h)||!Number.isSafeInteger(id)||id<=0)continue;
-   counts.set(id,(counts.get(id)||0)+1);
-  }
-  for(const [id,n] of counts)if(n===1)eligible.add(id);
- }
- return state.cellules.filter(c=>cellActive(c)&&eligible.has(Number(c.id)));
+ if(ui.techOwner)return [];
+ if(!Array.isArray(state.cellules))return null;
+ return state.cellules.filter(c=>c.Archivee===false&&c.Creation_Dossier_UI_ACL===true);
 }
 function initFirstContactChoices(){
  const facts=$('new-faits'),discrim=$('new-discriminations');
@@ -739,7 +722,7 @@ function renderNewDossier(){
  const enabled=quickEnabled()&&Array.isArray(eligible)&&eligible.length>0&&Array.isArray(state.dossiers)&&Array.isArray(state.faits)&&Array.isArray(state.discriminations)&&!ui.busy;
  for(const id of ['new-date','new-heure','new-canal','new-cellule','new-auteur','new-objet','new-save'])$(id).disabled=!enabled;
  sel.disabled=!enabled||eligible?.length===1;$('new-person-add').disabled=!enabled;for(const f of $('new-person-list').querySelectorAll('.person-fields'))f.disabled=!enabled;
- if(!enabled)set($('new-message'),'Création indisponible : vérifier vos habilitations personnelles RC/EC et les ACL. Le cumul avec un rôle central n’est pas encore pris en charge dans ce formulaire.');
+ if(!enabled)set($('new-message'),'Création indisponible : vérifier vos habilitations personnelles RC/EC et les ACL.');
 }
 function selectedValues(container){return [...$(container).querySelectorAll('input:checked')].map(x=>x.value);}
 function firstContactActions({cell,stamp,heure,canal,auteur,objet,motifs,criteres,commentaire}){
@@ -788,7 +771,12 @@ async function saveNewDossier(ev){ev.preventDefault();const msg=$('new-message')
 // V2.8.0.4 TEST — préparation uniquement : aucune ACL de lecture du dossier n'est ouverte.
 function shareEmails(v){return Array.isArray(v)?v.filter(x=>typeof x==='string'&&validEmail(x)):[];}
 function shareIdentity(){
- if(ui.centralAllowed||ui.techOwner||!Array.isArray(state.rcHabilitations)||!Array.isArray(state.habilitations))return '';
+ if(ui.techOwner)return '';
+ if(ui.centralAllowed){
+  const emails=[...new Set((state.adminsCentraux||[]).filter(h=>h.Role==='AN'&&h.Actif===true).map(h=>h.Email).filter(validEmail))];
+  return emails.length===1?emails[0]:'';
+ }
+ if(!Array.isArray(state.rcHabilitations)||!Array.isArray(state.habilitations))return '';
  const rc=state.rcHabilitations.filter(h=>h.Role==='RC');
  const emails=[...new Set((rc.length?rc:state.habilitations.filter(h=>h.Role==='EC')).map(h=>h.Email).filter(validEmail))];
  return emails.length===1?emails[0]:'';
@@ -911,7 +899,7 @@ function dateBounds(date,mode){let [y,m,d]=date.split('-').map(Number);let first
 }
 
 function updateRdvSaveControl(){const ds=$('rdv-dossier');$('rdv-save').disabled=!quickEnabled()||!Array.isArray(state.rdv)||!Array.isArray(state.rdvHist)||!Array.isArray(state.dossiers)||ui.busy||!activityWritable(dossierById(ds.value));}
-function renderAgenda(){if(ui.tab==='agenda')placeRdvForm();const root=$('agenda-list');root.replaceChildren();const ds=$('rdv-dossier'),prev=ds.value;ds.replaceChildren(new Option('— Choisir un dossier accessible —',''));
+function renderAgenda(){if(ui.tab==='agenda')placeRdvForm();$('rdv-editor-panel').hidden=!quickEnabled()||!(state.dossiers||[]).some(d=>activityWritable(d)&&(!rdvContext()||Number(d.id)===Number(rdvContext().id)));const root=$('agenda-list');root.replaceChildren();const ds=$('rdv-dossier'),prev=ds.value;ds.replaceChildren(new Option('— Choisir un dossier accessible —',''));
  for(const d of (state.dossiers||[]).filter(d=>activityWritable(d)&&(!rdvContext()||Number(d.id)===Number(rdvContext().id))))ds.add(new Option(C.dossierLabel(d.id)+' · '+val(d.Statut),String(d.id)));
  if([...ds.options].some(o=>o.value===prev))ds.value=prev;
  if(ui.editRdv){const r=(state.rdv||[]).find(x=>Number(x.id)===Number(ui.editRdv));if(r)ds.value=String(r.Dossier);}
