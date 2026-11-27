@@ -96,3 +96,8 @@
 .entretien-read-line{border-bottom:1px solid var(--line);padding:8px 0;overflow-wrap:anywhere}
 .entretien-read-line div{white-space:pre-wrap;margin-top:3px}
 @media(max-width:740px){.editor-cancel{margin-left:0}.editor-open{width:100%}}
+
+/* V2.8.0.10 */
+#dossier-entretiens details > summary { cursor:pointer; font-weight:600; padding:.65rem; }
+#dossier-entretiens details > .record { margin:.45rem 0; }
+#dossier-entretiens details > button { margin-top:.5rem; }
