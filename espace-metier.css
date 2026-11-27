@@ -54,3 +54,7 @@
 #person-fields>fieldset>label.field:has(input:checked){background:var(--blue-light);border-color:#8fb8d9}
 #person-fields>.field input,#person-fields>.field select{min-width:0;min-height:40px}
 @media(max-width:600px){#person-fields,#person-fields>fieldset{grid-template-columns:minmax(0,1fr)}#person-dialog{padding:14px}#person-fields{padding:10px}}
+
+#person-fields [aria-invalid="true"]{outline:2px solid #b42318;outline-offset:2px} #person-feedback:not(:empty){color:#b42318;font-weight:600} #person-fields>.field[hidden]{display:none!important}
+
+#person-fields .person-field-error{display:block;color:#b42318;font-size:12px;font-weight:600}
