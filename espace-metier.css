@@ -71,3 +71,5 @@
 .nav-group .navitem{padding:8px 9px;font-size:13px;white-space:normal;overflow-wrap:anywhere;min-width:0}
 @media(min-width:741px){.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;align-self:flex-start;width:260px}.side-note{margin-top:auto}}
 @media(max-width:740px){.sidebar #nav{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));align-items:start}.nav-group>summary{padding:9px}.sidebar .navitem{font-size:12px}}
+
+.org-group{border:1px solid #d6e0e8;border-radius:8px;padding:14px;margin:12px 0}.org-group summary{font-weight:600;cursor:pointer;margin-bottom:10px}.org-group input[type=checkbox]{width:auto;align-self:flex-start}.org-group textarea{resize:vertical} #org-form[hidden]{display:none}
