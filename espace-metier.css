@@ -122,3 +122,5 @@
 
 /* V2.9.3.0.1 — états métier et actions prioritaires */
 .cr-status{display:inline-block;width:fit-content;padding:5px 10px;border-radius:8px;font-weight:700;font-size:.92rem;line-height:1.4}.cr-status-signed{background:#dcfce7!important;color:#166534!important}.cr-status-correction{background:#ffedd5!important;color:#9a3412!important}.cr-status-pending{background:#dbeafe!important;color:#1e40af!important}.cr-status-unknown{background:#f1f5f9!important;color:#475569!important}.cr-task-panel{margin:16px 0;border-left:4px solid #c2410c}.cr-task{display:flex;flex-direction:column;align-items:flex-start;gap:8px;border:1px solid #fed7aa;border-radius:10px;padding:14px;background:#fffaf5;margin:8px 0}.btn.cr-correct-action{background:#9a3412;color:#fff;border:1px solid #9a3412;font-weight:700;padding:10px 15px;border-radius:8px}.btn.cr-correct-action:hover{background:#7c2d12}.btn.cr-correct-action:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
+
+.cr-send-panel{border-left-color:#2563eb}.cr-send-task{display:grid;gap:.5rem}.cr-send-task label{display:grid;gap:.35rem}.cr-send-task input[type=date]{max-width:18rem}
