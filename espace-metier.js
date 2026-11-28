@@ -893,7 +893,7 @@ async function saveNewDossier(ev){ev.preventDefault();const msg=$('new-message')
   submitted=true;await grist.docApi.applyUserActions(batch);committed=true;
   $('new-dossier-form').reset();$('new-person-list').replaceChildren();$('new-person-block').open=false;initFirstContactChoices();$('new-discrimination-box').hidden=true;
   await reload();set(msg,'Dossier, faits et personnes enregistrés ensemble.');
- }catch(e){set(msg,committed?'Signalement enregistré. Actualisez pour afficher les nouvelles données.':submitted?'Création non confirmée. Vérifiez si le signalement existe avant toute nouvelle tentative. Si Grist a refusé une action, le lot entier doit être annulé.':('Création refusée : '+(e?.message||e)));}
+ }catch(e){set(msg,committed?'Signalement enregistré. Actualisez pour afficher les nouvelles données.':submitted?('Création non confirmée. Vérifiez les données brutes avant toute nouvelle tentative. Diagnostic Grist (TEST) : '+String(e?.message||e||'Erreur inconnue').replace(/[\r\n]+/g,' ').slice(0,800)):('Création refusée : '+(e?.message||e)));}
  finally{ui.busy=false;const outcome=msg.textContent;renderNewDossier();set(msg,outcome);}
 }
 // V2.8.0.4 TEST — préparation uniquement : aucune ACL de lecture du dossier n'est ouverte.
