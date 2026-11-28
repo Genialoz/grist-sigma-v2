@@ -97,7 +97,7 @@ function editorAllowed(id){
  return manageDossier(d)&&Array.isArray(state.dossierPartages)&&shareCandidates(d)!==null;
 }
 let combinedEntretien=true;
-function setEntretienMode(withCR){combinedEntretien=withCR;const box=$('quick-e-cr-box'),text=$('quick-e-cr-text');box.hidden=!withCR;text.required=withCR;text.disabled=!withCR; if(!withCR)text.value='';set($('quick-e-save'),withCR?'Enregistrer l’entretien et le compte rendu':'Enregistrer l’entretien');}
+function setEntretienMode(withCR){combinedEntretien=withCR;const box=$('quick-e-cr-box'),text=$('quick-e-cr-text');box.hidden=!withCR;text.required=withCR;text.disabled=!withCR; if(!withCR){text.value='';draftController?.leave();draftPanel('quick-entretien',null);}set($('quick-e-save'),withCR?'Enregistrer l’entretien et le compte rendu':'Enregistrer l’entretien');}
 function syncEditors(){
  for(const id of Object.keys(editorSpecs)){
   const form=$(id),button=$('open-'+id);if(!form||!button)continue;
@@ -113,7 +113,7 @@ function syncEditors(){
  }
 }
 function closeEditor(id,reset=true){
- if(id==='quick-cr'||id==='quick-report')draftController?.leave();
+ if(['quick-cr','quick-report','quick-entretien'].includes(id))draftController?.leave();
  openedEditors.delete(id);dirtyEditors.delete(id);
  if(reset)$(id).reset();if(id==='quick-entretien'){$('quick-e-rdv').value='';set($('quick-e-rdv-label'),'');}syncEditors();
 }
@@ -129,12 +129,15 @@ function ensureDocumentEditor(id){
   initializedDocumentEditors.add(field);return true;
  }catch(err){console.error('SIGMA : initialisation de la rédaction',err);status('L’éditeur de rédaction est indisponible. Actualisez SIGMA (Ctrl + F5). Les autres rubriques restent utilisables.',true);return false;}
 }
-// Brouillons V2.8.2.1 : réservés au référent EC, sur les séries existantes.
+// Brouillons V2.8.2.3 : référent habilité, séries existantes et nouveau couple entretien/CR.
 let draftController=null,draftTimer=null;
+function draftForm(){return openedEditors.has('quick-cr')?'quick-cr':openedEditors.has('quick-report')?'quick-report':openedEditors.has('quick-entretien')&&combinedEntretien?'quick-entretien':null;}
+function combinedMeta(){return JSON.stringify({date:$('quick-e-date').value,type:$('quick-e-type').value,modalite:$('quick-e-modalite').value,observation:$('quick-e-observation').value,rdv:Number($('quick-e-rdv').value||0)});}
 function draftContext(){
- const id=openedEditors.has('quick-cr')?'quick-cr':openedEditors.has('quick-report')?'quick-report':null,d=selectedDossier(),email=d?.EC_Email;
+ const id=draftForm(),d=selectedDossier(),email=d?.EC_Email;
  // Gestion_UI_ACL est lisible uniquement par l’Owner et l’EC référent Editor habilité.
  if(!id||!d||ui.techOwner||!email||d.Gestion_UI_ACL!==true||d.Referent_UI_ACL!==true||!initialWritable(d))return null;
+ if(id==='quick-entretien'){if(!activityWritable(d)||!documentWritable(d))return null;const meta=combinedMeta(),m=JSON.parse(meta);return {form:id,genre:'EntretienCR',dossier:Number(d.id),entretien:0,email,base:0,fingerprint:'nouvel-entretien',title:'',text:$('quick-e-cr-text').value,meta,changed:dirtyEditors.has(id)&&!!(m.date||m.modalite||m.observation||m.rdv||m.type!=='Premier entretien'||$('quick-e-cr-text').value.trim()),busy:ui.busy};}
  const cr=id==='quick-cr',entretien=cr?Number($('quick-cr-entretien').value):0,series=cr?state.cr:state.rapports;
  if(cr&&!(state.entretiens||[]).some(e=>sameId(e.id,entretien)&&sameId(e.Dossier,d.id)))return null;
  if(!documentSeriesWritable(d,series,cr?'Entretien':'Dossier',cr?entretien:d.id))return null;
@@ -147,16 +150,16 @@ function draftPanel(form,info){
  p.hidden=false;set(p.querySelector('p'),info.message);for(const b of p.querySelectorAll('button')){const a=b.dataset.draftAction;b.hidden=!(a==='resume'?info.restore:a==='discard'?info.discard:(info.save||info.failed));b.disabled=info.busy||ui.busy||!!info.failed;}
 }
 function draftAvailability(){
- const form=openedEditors.has('quick-cr')?'quick-cr':openedEditors.has('quick-report')?'quick-report':null;if(!form)return;
+ const form=draftForm();if(!form)return;
  if(!draftController){draftPanel(form,{message:'Sauvegarde automatique indisponible : module non chargé. Actualisez SIGMA.'});return;}
  if(!draftContext())draftPanel(form,{message:ui.techOwner?'Sauvegarde automatique réservée à l’EC référent (pas au compte technique Owner).': 'Sauvegarde automatique réservée à l’EC référent habilité en écriture, sur un entretien sélectionné ou un rapport accessible.'});
 }
-function startDraftController(){if(draftController||!window.SigmaBrouillons||!quickEnabled())return;try{draftController=window.SigmaBrouillons.create({context:draftContext,fetch:t=>grist.docApi.fetchTable(t),apply:a=>grist.docApi.applyUserActions(a),display:draftPanel,confirm:m=>window.confirm(m),restore:(c,r)=>{if(c.form==='quick-report')$('quick-r-title').value=r.Titre||'';$(c.form==='quick-cr'?'quick-cr-texte':'quick-r-text').value=r.Texte||'';dirtyEditors.add(c.form);}});draftTimer=setInterval(()=>{try{draftController.tick();draftAvailability();}catch(err){draftController.leave();const form=openedEditors.has('quick-cr')?'quick-cr':openedEditors.has('quick-report')?'quick-report':null;if(form)draftPanel(form,{message:'Sauvegarde automatique indisponible : erreur de préparation. La saisie reste disponible.'});console.error('SIGMA : préparation des brouillons',err);}},500);}catch{draftController=null;}}
+function startDraftController(){if(draftController||!window.SigmaBrouillons||!quickEnabled())return;try{draftController=window.SigmaBrouillons.create({context:draftContext,fetch:t=>grist.docApi.fetchTable(t),apply:a=>grist.docApi.applyUserActions(a),display:draftPanel,confirm:m=>window.confirm(m),onDiscard:c=>{if(c.form==='quick-entretien')closeEditor(c.form);},restore:(c,r)=>{if(c.form==='quick-entretien'){const m=window.SigmaBrouillons.metadata(r.Donnees_Entretien);if(!m)throw Error('Brouillon invalide');const linked=m.rdv?(state.rdv||[]).find(x=>sameId(x.id,m.rdv)):null;if(m.rdv&&!linkedRdvEligible(linked,selectedDossier(),state.entretiens)){if(!window.confirm('Le rendez-vous associé n’est plus disponible pour cet entretien. Reprendre les autres informations sans ce lien ?'))throw Error('Reprise annulée');m.rdv=0;}$('quick-e-date').value=m.date;$('quick-e-type').value=m.type;$('quick-e-modalite').value=m.modalite;$('quick-e-observation').value=m.observation;$('quick-e-rdv').value=m.rdv?String(m.rdv):'';set($('quick-e-rdv-label'),m.rdv&&linked?'Rendez-vous associé : '+childLabel(linked,'RDV #'+linked.id):'');$('quick-e-cr-text').value=r.Texte||'';dirtyEditors.add(c.form);return;}if(c.form==='quick-report')$('quick-r-title').value=r.Titre||'';$(c.form==='quick-cr'?'quick-cr-texte':'quick-r-text').value=r.Texte||'';dirtyEditors.add(c.form);}});draftTimer=setInterval(()=>{try{draftController.tick();draftAvailability();}catch(err){draftController.leave();const form=draftForm();if(form)draftPanel(form,{message:'Sauvegarde automatique indisponible : erreur de préparation. La saisie reste disponible.'});console.error('SIGMA : préparation des brouillons',err);}},500);}catch{draftController=null;}}
 async function draftFinalActions(form){return draftController?await draftController.finalize(form):[];}
 function openEditor(id,focus=true){
  if(ui.busy||!editorAllowed(id)||!ensureDocumentEditor(id))return false;
  openedEditors.add(id);if(id==='transfer-form')renderTransfer(selectedDossier());else if(id==='dossier-share-form')renderDossierPartages(selectedDossier());else if(id==='rdv-form')updateRdvSaveControl();else updateQuickControls();syncEditors();
- if(id==='quick-entretien')setEntretienMode(true);if(id==='quick-cr'||id==='quick-report'){startDraftController();draftAvailability();}
+ if(id==='quick-entretien')setEntretienMode(true);if(['quick-cr','quick-report','quick-entretien'].includes(id)){startDraftController();draftAvailability();}
  if(focus){$(id).scrollIntoView?.({block:'nearest'});$(editorSpecs[id][1]).focus();}return true;
 }
 function abandonEditors(){
@@ -179,7 +182,7 @@ function initEditors(){
   if(id==='quick-entretien'){const actions=node('div','entretien-create-actions');actions.id='entretien-create-actions';actions.hidden=true;button.before(actions);const primary=node('div','entretien-create-choice');primary.append(button,node('p','hint','Enregistrer l’entretien et rédiger immédiatement son compte rendu.'));const alone=node('button','btn btn-light','+ Entretien seul');alone.id='open-entretien-seul';alone.type='button';alone.hidden=true;const secondary=node('div','entretien-create-choice');secondary.append(alone,node('p','hint','Enregistrer l’entretien et rédiger son compte rendu ultérieurement.'));actions.append(primary,secondary);alone.addEventListener('click',()=>{if(openedEditors.size&&!abandonEditors())return;if(openEditor(id))setEntretienMode(false);});}
   button.addEventListener('click',()=>{if(id==='rdv-form'){resetRdv();renderAgenda();}if(openedEditors.size&&!openedEditors.has(id)&&!abandonEditors())return;openEditor(id);});
   const cancel=node('button','btn btn-light editor-cancel','Annuler');cancel.type='button';
-  if(id==='rdv-form'){$('rdv-reset').textContent='Annuler';}else{form.append(cancel);cancel.addEventListener('click',()=>{if(ui.busy||(dirtyEditors.has(id)&&!confirm((id==='quick-cr'||id==='quick-report')?'Fermer cette saisie ? Le brouillon déjà sauvegardé dans Grist sera conservé ; les dernières modifications non sauvegardées peuvent être perdues.':'Abandonner cette saisie ?')))return;closeEditor(id);if(id==='quick-cr'){ui.previousEntretien='';quickVersionHint();updateQuickControls();}if(id==='dossier-share-form')renderDossierPartages(selectedDossier());if(id==='quick-cr'){const target=$('dossier-entretiens').querySelector('details[open] summary')||$('dossier-entretiens').querySelector('summary');target?.focus();}else button.focus();});}
+  if(id==='rdv-form'){$('rdv-reset').textContent='Annuler';}else{form.append(cancel);cancel.addEventListener('click',()=>{if(ui.busy||(dirtyEditors.has(id)&&!confirm((id==='quick-cr'||id==='quick-report'||(id==='quick-entretien'&&combinedEntretien))?'Fermer cette saisie ? Le brouillon déjà sauvegardé dans Grist sera conservé ; les dernières modifications non sauvegardées peuvent être perdues.':'Abandonner cette saisie ?')))return;closeEditor(id);if(id==='quick-cr'){ui.previousEntretien='';quickVersionHint();updateQuickControls();}if(id==='dossier-share-form')renderDossierPartages(selectedDossier());if(id==='quick-cr'){const target=$('dossier-entretiens').querySelector('details[open] summary')||$('dossier-entretiens').querySelector('summary');target?.focus();}else button.focus();});}
   form.addEventListener('input',()=>{if(openedEditors.has(id))dirtyEditors.add(id);});
   form.addEventListener('change',()=>{if(openedEditors.has(id))dirtyEditors.add(id);});
  }
@@ -358,8 +361,10 @@ function quickVersionHint(){const id=Number($('quick-cr-entretien').value);const
  const v=E.versionState(state.cr,id);set(el,v.duplicateVersions.length?'ALERTE : versions en doublon, ne pas créer de nouvelle version.':'Prochaine version estimée : '+v.nextVersion+' (recontrôlée avant écriture).');}
 async function saveQuickEntretien(ev){ev.preventDefault();if(ui.busy||!quickEnabled()||!E||ui.selected===null)return;
  const dossier=(state.dossiers||[]).find(d=>Number(d.id)===Number(ui.selected));if(!activityWritable(dossier))return;
- try{const withCR=combinedEntretien;const texte=$('quick-e-cr-text').value.trim();if(withCR&&(!texte||texte.length>8000||!documentWritable(dossier)))throw Error('Compte rendu obligatoire (8000 caractères maximum) ou rédaction non autorisée.');const payload=E.entretien({Dossier:String(dossier.id),Date_Entretien:$('quick-e-date').value,Type:$('quick-e-type').value,Modalite:$('quick-e-modalite').value,Observation_Non_Nominative:$('quick-e-observation').value},state.dossiers);
- quickBusy(true);quickMessage('Enregistrement de l’entretien…');const current=E.rows(await grist.docApi.fetchTable(E.TABLES.dossiers)).find(x=>sameId(x.id,dossier.id));if(!activityWritable(current)||current.EC_Email!==dossier.EC_Email||(withCR&&!documentWritable(current)))throw Error('Dossier ou droits modifiés. Actualisez.');const linked=Number($('quick-e-rdv').value);if(linked){const [rd,ed,dd]=await Promise.all([grist.docApi.fetchTable(METIER_TABLES.rdv),grist.docApi.fetchTable(E.TABLES.entretiens),grist.docApi.fetchTable(E.TABLES.dossiers)]);const r=E.rows(rd).find(x=>sameId(x.id,linked)),fresh=E.rows(ed),fd=E.rows(dd).find(x=>sameId(x.id,dossier.id));if(!Object.prototype.hasOwnProperty.call(ed,'Rendez_Vous')&&!fresh.some(x=>Object.prototype.hasOwnProperty.call(x,'Rendez_Vous')))throw Error('Configuration du lien rendez-vous manquante.');if(!linkedRdvEligible(r,fd,fresh))throw Error('Rendez-vous modifié, déjà associé ou non autorisé. Actualisez.');payload.Rendez_Vous=linked;}const actions=withCR?[['AddRecord',E.TABLES.entretiens,-1,payload],['AddRecord',E.TABLES.cr,null,{Entretien:-1,Version:1,Etat:'Brouillon',Auteur_Email:payload.EC_Email,Texte:texte}]]:[['AddRecord',E.TABLES.entretiens,null,payload]];
+ try{const withCR=combinedEntretien,metaBefore=combinedMeta();const texte=$('quick-e-cr-text').value.trim();if(withCR&&(!texte||texte.length>8000||!documentWritable(dossier)))throw Error('Compte rendu obligatoire (8000 caractères maximum) ou rédaction non autorisée.');const payload=E.entretien({Dossier:String(dossier.id),Date_Entretien:$('quick-e-date').value,Type:$('quick-e-type').value,Modalite:$('quick-e-modalite').value,Observation_Non_Nominative:$('quick-e-observation').value},state.dossiers);
+ quickBusy(true);quickMessage('Enregistrement de l’entretien…');const current=E.rows(await grist.docApi.fetchTable(E.TABLES.dossiers)).find(x=>sameId(x.id,dossier.id));if(!activityWritable(current)||current.EC_Email!==dossier.EC_Email||(withCR&&!documentWritable(current)))throw Error('Dossier ou droits modifiés. Actualisez.');const linked=JSON.parse(metaBefore).rdv;if(linked){const [rd,ed,dd]=await Promise.all([grist.docApi.fetchTable(METIER_TABLES.rdv),grist.docApi.fetchTable(E.TABLES.entretiens),grist.docApi.fetchTable(E.TABLES.dossiers)]);const r=E.rows(rd).find(x=>sameId(x.id,linked)),fresh=E.rows(ed),fd=E.rows(dd).find(x=>sameId(x.id,dossier.id));if(!Object.prototype.hasOwnProperty.call(ed,'Rendez_Vous')&&!fresh.some(x=>Object.prototype.hasOwnProperty.call(x,'Rendez_Vous')))throw Error('Configuration du lien rendez-vous manquante.');if(!linkedRdvEligible(r,fd,fresh))throw Error('Rendez-vous modifié, déjà associé ou non autorisé. Actualisez.');payload.Rendez_Vous=linked;}const actions=withCR?[['AddRecord',E.TABLES.entretiens,-1,payload],['AddRecord',E.TABLES.cr,null,{Entretien:-1,Version:1,Etat:'Brouillon',Auteur_Email:payload.EC_Email,Texte:texte}]]:[['AddRecord',E.TABLES.entretiens,null,payload]];
+ if(withCR)actions.push(...await draftFinalActions('quick-entretien'));
+ if(metaBefore!==combinedMeta()||withCR!==combinedEntretien||(withCR&&texte!==$('quick-e-cr-text').value.trim()))throw Error('Saisie modifiée pendant l’enregistrement. Réessayez.');
  await grist.docApi.applyUserActions(actions);
  closeEditor('quick-entretien');await reload();showDossier(dossier.id,'entretiens');quickMessage(withCR?'Entretien et compte rendu V01 enregistrés.':'Entretien créé. Identité du créateur et droits à contrôler dans Grist.');
  }catch(err){quickMessage('Entretien refusé : '+(err?.message||err),true);}finally{quickBusy(false);}}
