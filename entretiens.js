@@ -21,7 +21,7 @@ function render(){
  if(!S.entretiens.length)text(h,'Aucun entretien accessible.');const can=writable()&&S.dossiers!==null&&S.entretiens!==null&&S.cr!==null&&!S.busy;
  $('e-save').disabled=!can;$('cr-save').disabled=!can;const selected=(S.cr||[]).find(r=>r.id===S.selectedCR);if(selected)showCR(selected);
 }
-function showCR(r){$('cr-detail').hidden=false;text($('cr-detail-title'),childLabel(r,'Entretien #'+r.Entretien+' · version '+r.Version+' · enregistrement #'+r.id)+' · '+legacyLabel(r)+' · '+stamp(r.Date_Creation)+' · auteur de cette version : '+(r.Createur_Email||'Non tracé'));window.SigmaRedaction ? SigmaRedaction.render($('cr-detail-text'),r.Texte||'') : text($('cr-detail-text'),r.Texte||'');const log=$('cr-submission-log');log.replaceChildren();
+function showCR(r){$('cr-detail').hidden=false;text($('cr-detail-title'),childLabel(r,'Entretien #'+r.Entretien+' · version '+r.Version+' · enregistrement #'+r.id)+' · '+legacyLabel(r)+' · '+stamp(r.Date_Creation)+' · auteur de cette version : '+(r.Createur_Email||'Non tracé'));window.SigmaRedaction ? SigmaRedaction.render($('cr-detail-text'),r.Texte||'') : text($('cr-detail-text'),r.Texte||'');window.SigmaExportWord?.mount($('cr-detail'),'CR',r);const log=$('cr-submission-log');log.replaceChildren();
  if(S.soumissions===null){text($('cr-submit-status'),'Historique des soumissions anciennes indisponible : aucune conclusion sur leur existence.');return;}
  const events=P.related(S.soumissions,r.id);
  text($('cr-submit-status'),events.length?'Historique V2.3.0 : demande de validation interne enregistrée (ancienne procédure, sans validation ni signature).':'Aucune soumission historique. Le processus de signature du rapport sera traité séparément.');
