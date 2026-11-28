@@ -116,3 +116,6 @@
 .rdv-entretien-actions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 16px}
 .rdv-entretien-actions .btn{white-space:normal;max-width:100%}
 @media(max-width:740px){.entretien-create-actions{grid-template-columns:1fr}}
+
+/* Brouillons privés V2.8.2.0 */
+.draft-panel{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem;padding:.6rem .75rem;margin:.5rem 0;background:#f3f6fa;border:1px solid #d8e1eb;border-radius:6px}.draft-panel[hidden]{display:none}.draft-panel p{flex:1 1 100%;margin:0}.draft-panel button{font-size:.85rem}
