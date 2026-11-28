@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict'), C=require('../cr-correction-core.js'), E=require('../entretiens-core.js');
+const r={id:10,Entretien:1,Version:1,Identifiant_Metier:'CR-V01',Texte:'[SIGMA-FORMAT-2]\n<p><strong>Texte</strong></p>',Etat:'Brouillon'};
+const p={id:20,Identifiant_Document:r.Identifiant_Metier,Version:1,Texte:r.Texte,Destinataire_Email:'a@example.invalid'};
+const d={Consultation:20,Identifiant_Document:p.Identifiant_Document,Version:1,Auteur_Email:p.Destinataire_Email,Consentement:true,Decision:'Correction',Observations:'Date à corriger'};
+let n=0;function t(name,fn){fn();console.log('OK '+name);n++;}
+t('dernière version',()=>assert.equal(C.latest([r,{...r,id:11,Version:2}],1).id,11));
+t('autre entretien exclu',()=>assert.equal(C.latest([r,{...r,id:11,Entretien:2,Version:3}],1).id,10));
+t('aucune version',()=>assert.equal(C.latest([],1),null));
+t('doublon refusé',()=>assert.throws(()=>C.latest([r,{...r,id:11}],1)));
+t('données indisponibles',()=>assert.throws(()=>C.latest(null,1)));
+t('correction associée',()=>assert.equal(C.decision(r,[p],[d]).observations,d.Observations));
+t('signature distinguée',()=>assert.equal(C.decision(r,[p],[{...d,Decision:'Signe',Observations:''}]).kind,'signed'));
+t('aucune décision',()=>assert.equal(C.decision(r,[p],[]).kind,'pending'));
+t('autre décision exclue',()=>assert.equal(C.decision(r,[p],[{...d,Consultation:21}]).kind,'pending'));
+t('texte divergent',()=>assert.equal(C.decision(r,[{...p,Texte:'autre'}],[d]).kind,'unknown'));
+t('publication doublon',()=>assert.equal(C.decision(r,[p,p],[d]).kind,'unknown'));
+t('lecture refusée',()=>assert.equal(C.decision(r,[p],null).kind,'unknown'));
+t('reprise rich text et V2',()=>{const x=E.prepareVersion({Entretien:1,Texte:r.Texte},[{id:1,EC_Email_ACL:'e@example.invalid'}],[r],E.versionState([r],1).fingerprint);assert.equal(x.Texte,r.Texte);assert.equal(x.Version,2);assert.equal(x.Entretien,1);});
+t('concurrence refusée',()=>assert.throws(()=>E.prepareVersion({Entretien:1,Texte:r.Texte},[{id:1,EC_Email_ACL:'e@example.invalid'}],[r,{...r,id:11,Version:2}],E.versionState([r],1).fingerprint)));
+console.log(n+' tests réussis');
