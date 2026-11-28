@@ -24,3 +24,18 @@ t('retransmission même destinataire',()=>assert.equal(run(cycle,rec,v2,pub).pay
 t('retransmission autre destinataire refusée',()=>assert.throws(()=>run(cycle,{id:5,email:other.Courriel},v2,pub)));
 t('signature bloque retransmission',()=>assert.throws(()=>run(cycle.map((x,i)=>i===4?[{...decision,Decision:'Signe',Observations:''}]:x),rec,v2,pub)));
 console.log(n+' tests réussis');
+
+t('nouvelle date après préparation non publiée',()=>{const x=run(change(1,[{...prep,Date_Expiration:expiry-86400}]));assert.equal(x.prep,undefined);assert.equal(x.payload.Date_Expiration,expiry);});
+t('réutilise la préparation à la date choisie',()=>assert.equal(run(change(1,[{...prep,id:21,Date_Expiration:expiry-86400},prep])).prep.id,20));
+t('doublon exact refusé',()=>assert.throws(()=>run(change(1,[prep,{...prep,id:21}]))));
+t('nouvelle date après correction',()=>{const x=cycle.map((a,i)=>i===1?[prep,{...prep,id:21,Compte_Rendu:11,Date_Expiration:expiry-86400}]:a);assert.equal(run(x,rec,v2,pub).prep,undefined);});
+t('autre référent refusé même à autre date',()=>assert.throws(()=>run(change(1,[{...prep,Createur_Email:'autre@example.invalid',Date_Expiration:expiry-86400}]))));
+(async()=>{
+ const future=new Date();future.setUTCDate(future.getUTCDate()+30);const chosen=future.toISOString().slice(0,10),ts=Date.parse(chosen)/1000;
+ const previousPrep={...prep,Date_Expiration:ts-86400};
+ const previousPub={...pub,Date_Expiration:ts-86400};
+ const stale={...previousPrep,id:21,Compte_Rendu:11};
+ const tables={SIGMA_V2_COMPTES_RENDUS_TEST:[cr,v2],SIGMA_V2_CR_PARTAGES_TEST:[previousPrep,stale],SIGMA_V2_CR_PARTAGES_REVOCATIONS_TEST:[],SIGMA_V2_CONSULTATIONS_TEST:[previousPub],SIGMA_V2_DECISIONS_CR_TEST:[decision],SIGMA_V2_ENTRETIENS_TEST:[e],SIGMA_V2_PERSONNES_TEST:[person],SIGMA_V2_DOSSIERS_TEST:[d]};
+ const actions=[];const api={fetchTable:async t=>tables[t],applyUserActions:async batch=>{for(const a of batch){actions.push(a);const [,t,,payload]=a;if(t==='SIGMA_V2_CR_PARTAGES_TEST')tables[t].push({id:22,...payload,Createur_Email:author,EC_Habilite_ACL:true});else if(t==='SIGMA_V2_CONSULTATIONS_TEST')tables[t].push({id:31,...payload,Publie_Par:author,Acces_Actif_ACL:true});else throw Error('Unexpected write');}}};
+ const sent=await F.send(api,v2,rec,chosen,previousPub);assert.equal(sent.Preparation_Publication,22);assert.equal(sent.Date_Expiration,ts);assert.equal(tables.SIGMA_V2_CR_PARTAGES_TEST[1].Date_Expiration,ts-86400);assert.equal(actions.length,2);await assert.rejects(()=>F.send(api,v2,rec,chosen,previousPub));assert.equal(actions.length,2);console.log('OK envoi simulé nouvelle date, historique intact, double envoi refusé');
+})().catch(e=>{console.error(e);process.exitCode=1;});

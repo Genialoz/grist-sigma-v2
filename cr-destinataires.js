@@ -1,4 +1,4 @@
-/* V2.9.3.1.1 TEST — destinataire issu du dossier, jamais saisi librement. */
+/* V2.9.3.1.1.4 TEST — destinataire issu du dossier, jamais saisi librement. */
 (function(root,factory){const api=factory(typeof module==='object'&&module.exports?require('./cr-partages-core.js'):root.SigmaCRPartagesCore,typeof module==='object'&&module.exports?require('./cr-publication-core.js'):root.SigmaCRPublication);if(typeof module==='object'&&module.exports)module.exports=api;else root.SigmaCRDestinataires=api;})(typeof window==='undefined'?globalThis:window,function(C,P){'use strict';
 const PERSON='SIGMA_V2_PERSONNES_TEST',ENT='SIGMA_V2_ENTRETIENS_TEST',DOS='SIGMA_V2_DOSSIERS_TEST',DEC='SIGMA_V2_DECISIONS_CR_TEST';
 const ref=v=>typeof v==='number'?v:Array.isArray(v)&&v[0]==='R'?v[2]:0;
@@ -22,8 +22,10 @@ function candidate(data,expected,recipient,date,previous=null,now=new Date()){
  if(!recipients(cr,ents,people,previous).some(x=>x.id===recipient.id&&x.email===recipient.email))throw Error('Fiche du déclarant modifiée. Actualisez.');
  const expiry=C.expiration(date,now);
  const active=preps.filter(p=>ref(p.Compte_Rendu)===cr.id&&C.state(p,events,now)==='Préparé — aucun lien externe');
- if(active.length>1||active.some(p=>p.Destinataire_Email!==recipient.email||Number(p.Date_Expiration)!==expiry))throw Error('Préparation existante différente : vérifiez ou révoquez-la avant de poursuivre.');
- const prep=active[0];if(prep&&prep.Createur_Email!==cr.EC_Email_ACL)throw Error('Préparation appartenant à un autre référent.');
+ if(active.some(p=>p.Destinataire_Email!==recipient.email||p.Createur_Email!==cr.EC_Email_ACL))throw Error('Préparation existante avec un autre destinataire ou référent : vérifiez-la avant de poursuivre.');
+ const matching=active.filter(p=>Number(p.Date_Expiration)===expiry);
+ if(matching.length>1)throw Error('Plusieurs préparations identiques : vérifiez les données avant de poursuivre.');
+ const prep=matching[0];
  const draft=prep||{id:Number.MAX_SAFE_INTEGER,Compte_Rendu:cr.id,EC_Habilite_ACL:cr.EC_Habilite_ACL,Action:'Preparation',Createur_Email:cr.EC_Email_ACL,Destinataire_Email:recipient.email,Date_Expiration:expiry};
  const payload=P.prepare(draft,crs,prep?preps:[...preps,draft],events,pubs,now,ds);
  return {prep,payload,cr,expiry};
