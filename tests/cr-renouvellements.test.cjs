@@ -12,6 +12,7 @@ test('décision existante',()=>assert.equal(info(p,[{Consultation:3}]),null));
 test('préparation absente',()=>assert.equal(info(p,[],[]),null));
 test('date effective absente',()=>assert.equal(info({...p,Date_Expiration_Effective:null}),null));
 test('accès refusé non expiré',()=>assert.equal(info({...p,Date_Expiration_Effective:ts('2026-12-03')}),null));
+test('accès suspendu après réouverture',()=>{const x=info({...p,Date_Expiration_Effective:ts('2026-12-03'),Acces_Apres_Reouverture_ACL:false});assert.equal(x.kind,'expired');assert.equal(x.suspended,true);});
 test('date passée refusée',()=>assert.throws(()=>R.payload('2026-11-28','relance',now)));
 test('motif vide refusé',()=>assert.throws(()=>R.payload('2026-12-03','   ',now)));
 test('date impossible refusée',()=>assert.throws(()=>R.payload('2026-02-31','relance',now)));
