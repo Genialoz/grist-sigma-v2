@@ -1,0 +1,11 @@
+const test=require('node:test'),assert=require('node:assert/strict'),T=require('../cr-tasks-core.js');
+const make=(id,kind='send',time=id)=>({kind,time,label:'Signalement École '+id,r:{id,Version:2,Identifiant_Metier:'SIG-'+id+'-ENT01-CR-V02'}});
+test('timestamps Grist',()=>{assert.equal(T.timestamp(['D',123]),123);assert.equal(T.timestamp(null),0);assert.equal(T.timestamp('123'),0);});
+test('tri ancien en premier sans modifier la source',()=>{const a=[make(3),make(1),make(2)];assert.deepEqual(T.sort(a).map(x=>x.r.id),[1,2,3]);assert.equal(a[0].r.id,3);});
+test('dates inconnues en dernier',()=>assert.deepEqual(T.sort([make(1,'send',0),make(2)]).map(x=>x.r.id),[2,1]));
+test('filtre par statut',()=>assert.equal(T.filter([make(1),make(2,'correction')],'correction','').length,1));
+test('recherche accents et casse',()=>assert.equal(T.filter([make(1)],'all','ECOLE').length,1));
+test('recherche identifiant complet',()=>assert.equal(T.filter([make(1)],'all','SIG-1-ENT01-CR-V02').length,1));
+test('pagination volume 53, aucun doublon ni perte',()=>{const a=Array.from({length:53},(_,i)=>make(i+1));for(const size of [10,25,50]){const pages=T.paginate(a,1,size).pages;assert.deepEqual(Array.from({length:pages},(_,i)=>T.paginate(a,i+1,size).items).flat(),a);}});
+test('page ramenée aux limites après actualisation',()=>{assert.equal(T.paginate([make(1)],6,10).page,1);assert.equal(T.paginate([],0,50).pages,1);});
+test('taille invalide revient à 10',()=>assert.equal(T.paginate(Array.from({length:20},(_,i)=>make(i)),1,100).items.length,10));
