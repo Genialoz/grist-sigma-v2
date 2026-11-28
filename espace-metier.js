@@ -870,7 +870,7 @@ function firstContactActions({cell,stamp,heure,canal,auteur,objet,motifs,critere
  const factIds=new Map();
  motifs.forEach((motif,index)=>{
   const factId=-(index+2);factIds.set(motif,factId);
-  actions.push(['AddRecord',SIGMA_FAITS_TABLE,factId,{Dossier:-1,Categorie:motif,Commentaire_Non_Nominatif:commentaire}]);
+  actions.push(['AddRecord',SIGMA_FAITS_TABLE,factId,{Dossier:-1,Categorie:motif,Commentaire_Non_Nominatif:commentaire,Numero_Dossier:index+1}]);
  });
  for(const critere of criteres)actions.push(['AddRecord',SIGMA_DISCRIMINATION_TABLE,null,{Fait:factIds.get('Discrimination'),Critere:critere}]);
  return actions;
@@ -1155,7 +1155,7 @@ function readPersonFields(fields){const raw={Qualites:[]};for(const el of fields
 function renumberNewPersons(){[...$('new-person-list').children].forEach((card,i)=>set(card.querySelector('.new-person-title'),'Personne '+(i+1)));}
 function addNewPerson(){if(ui.busy||$('new-person-add').disabled)return;const card=node('section','new-person-card'),head=node('div','panel-head'),title=node('strong','new-person-title'),remove=node('button','btn btn-light','Retirer cette personne'),fields=node('fieldset','motif-fieldset'),feedback=node('p','new-person-feedback');remove.type='button';feedback.setAttribute('role','alert');head.append(title,remove);card.append(head,fields,feedback);$('new-person-list').append(card);buildPersonFields(fields,feedback);remove.addEventListener('click',()=>{if(!ui.busy&&confirm('Retirer cette fiche non enregistrée ?')){card.remove();renumberNewPersons();}});renumberNewPersons();}
 function collectNewPersons(){const result=[];for(const card of $('new-person-list').children){const fields=card.querySelector('.person-fields'),feedback=card.querySelector('.new-person-feedback');personConditional(fields);if(!personValidate(fields,feedback)){$('new-person-block').open=true;fields.querySelector('[aria-invalid=true]')?.focus();throw Error('Complétez la fiche '+card.querySelector('.new-person-title').textContent+' ou retirez-la.');}result.push(readPersonFields(fields));}return result;}
-function newPersonActions(payloads,existing){let id=Math.min(-1,...existing.map(a=>typeof a[2]==='number'?a[2]:0))-1;return payloads.flatMap(payload=>{const personId=id--;return [['AddRecord',PERSON_TABLE,personId,{Dossier:-1,...payload}],['AddRecord',PERSON_LOG,null,{Personne:personId,Action:'Création',Champs:Object.keys(payload).join(', ')}]];});}
+function newPersonActions(payloads,existing){let id=Math.min(-1,...existing.map(a=>typeof a[2]==='number'?a[2]:0))-1;return payloads.flatMap((payload,index)=>{const personId=id--;return [['AddRecord',PERSON_TABLE,personId,{Dossier:-1,...payload,Numero_Dossier:index+1}],['AddRecord',PERSON_LOG,null,{Personne:personId,Action:'Création',Champs:Object.keys(payload).join(', ')}]];});}
 function initPersons(){buildPersonFields($('person-fields'),$('person-feedback'));$('new-person-add').addEventListener("click",addNewPerson);$('new-dossier-form').noValidate=true;$('person-form').noValidate=true;personConditional(); $('person-add').addEventListener('click',()=>openPerson());$('person-close').addEventListener('click',()=>{if(!ui.busy)closePerson();});$('person-dialog').addEventListener('cancel',e=>{e.preventDefault();if(!ui.busy)closePerson();});$('person-form').addEventListener('submit',savePerson);}
 
 const ORG_TABLE='SIGMA_FICHES_ORGANISATION',ORG_LOG='SIGMA_V2_ORGANISATION_HISTORIQUE_TEST';
