@@ -144,7 +144,7 @@ function draftContext(){
 function draftPanel(form,info){
  let p=$('draft-panel-'+form);if(!info){if(p)p.hidden=true;return;}
  if(!p){p=node('div','draft-panel');p.id='draft-panel-'+form;const msg=node('p','hint');msg.setAttribute('role','status');p.append(msg);for(const [label,action] of [['Reprendre le brouillon','resume'],['Abandonner le brouillon','discard'],['Enregistrer le brouillon maintenant','saveNow']]){const b=node('button','btn btn-light',label);b.type='button';b.dataset.draftAction=action;b.addEventListener('click',()=>{if(!ui.busy)void draftController?.[action]();});p.append(b);}$(form).querySelector('h4').after(p);}
- p.hidden=false;set(p.querySelector('p'),info.message);for(const b of p.querySelectorAll('button')){const a=b.dataset.draftAction;b.hidden=!(a==='resume'?info.restore:a==='discard'?info.discard:info.save);b.disabled=info.busy||ui.busy;}
+ p.hidden=false;set(p.querySelector('p'),info.message);for(const b of p.querySelectorAll('button')){const a=b.dataset.draftAction;b.hidden=!(a==='resume'?info.restore:a==='discard'?info.discard:(info.save||info.failed));b.disabled=info.busy||ui.busy||!!info.failed;}
 }
 function draftAvailability(){
  const form=openedEditors.has('quick-cr')?'quick-cr':openedEditors.has('quick-report')?'quick-report':null;if(!form)return;
