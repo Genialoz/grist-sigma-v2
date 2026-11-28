@@ -63,23 +63,40 @@ function classify(table, raw, email) {
 }
 function classifyError(error) {
  const msg=String(error?.message||error||'');
- return /access denied|not authorized|permission denied|forbidden|blocked by|access rules|no access/i.test(msg)?{state:'REFUS',detail:'Refus explicite à examiner'}:{state:'INCONCLUSIF',detail:'Erreur technique ou accès non confirmé'};
+ const status=Number(error?.status||error?.statusCode||0);
+ // Never echo arbitrary server messages: they may contain confidential values.
+ if ([401,403].includes(status)||/access denied|not authorized|permission denied|forbidden|blocked by|access rules|no access/i.test(msg)) return {state:'REFUS',detail:'Refus explicite à examiner'};
+ const patterns=[[/not found|unknown table|no such table/i,'Table introuvable'],[/censor|censored/i,'Valeur censurée'],[/date|datetime|invalid time/i,'Conversion de date'],[/cannot read|undefined|null/i,'Lecture de propriété impossible'],[/serializ|encod|decod|marshal|clone/i,'Encodage ou sérialisation'],[/timeout|timed out/i,'Délai dépassé'],[/network|connection|fetch failed/i,'Connexion ou transport'],[/not implemented|unsupported/i,'Opération non prise en charge'],[/access|permission|denied/i,'Erreur de droits non classée']];
+ const match=patterns.find(([pattern])=>pattern.test(msg));
+ const kind=error?.name==='TypeError'?'TypeError':error?.name==='RangeError'?'RangeError':'Erreur';
+ return {state:'INCONCLUSIF',detail:`${kind} — ${match?match[1]:'Motif non reconnu'}${[400,404,409,429,500,502,503,504].includes(status)?' (HTTP '+status+')':''}`};
 }
-if(typeof module!=='undefined') module.exports={TABLES,classify,classifyError};
+function sourceCheck(records,email){
+ if(!Array.isArray(records)||!records.length)return {state:'INCONCLUSIF',detail:'Source sans ligne témoin'};
+ if(records.some(r=>!r||!Object.prototype.hasOwnProperty.call(r,'Destinataire_Email')||!Object.prototype.hasOwnProperty.call(r,'Identifiant_Document')||!Object.prototype.hasOwnProperty.call(r,'Acces_Actif_ACL')))return {state:'INCONCLUSIF',detail:'Source non identifiable : sélectionner Consultations et toutes les variables'};
+ return classify('SIGMA_V2_CONSULTATIONS_TEST',{id:records.map(r=>r.id),Destinataire_Email:records.map(r=>r.Destinataire_Email)},email);
+}
+if(typeof module!=='undefined') module.exports={TABLES,classify,classifyError,sourceCheck};
 if(typeof window!=='undefined') window.addEventListener('DOMContentLoaded',()=>{
- const $=id=>document.getElementById(id); let running=false;
+ const $=id=>document.getElementById(id); let running=false, source=null;
  const add=(name,r)=>{const tr=document.createElement('tr'); for(const value of [name,r.state,r.detail]){const td=document.createElement('td');td.textContent=value;tr.append(td);}tr.className=r.state; $('results').append(tr);};
  if(!window.grist){$('status').textContent='Ouvrez ce widget dans Grist TEST.';return;}
  grist.ready({requiredAccess:'full'});
- $('run').disabled=false;
- $('run').addEventListener('click',async()=>{
+ // Retain only identifiers and the presence of expected columns, never document text.
+ grist.onRecords(data=>{source=Array.isArray(data)?data.map(r=>r&&Object.fromEntries(['id','Destinataire_Email','Identifiant_Document','Acces_Actif_ACL'].filter(k=>Object.prototype.hasOwnProperty.call(r,k)).map(k=>[k,k==='Identifiant_Document'?true:r[k]]))):null;},{keepEncoded:true});
+ for(const id of ['run','run-consult'])$(id).disabled=false;
+ async function run(tables){
   if(running||!$('confirm').checked||!$('identity').value.trim())return;
-  running=true;$('run').disabled=true;$('identity').disabled=true;$('confirm').disabled=true;$('results').replaceChildren();
+  running=true;for(const id of ['run','run-consult','identity','confirm'])$(id).disabled=true;$('results').replaceChildren();$('source-status').textContent='';
   const email=$('identity').value.trim();const counts={OK:0,KO:0,REFUS:0,INCONCLUSIF:0};
-  try{for(const [i,table] of TABLES.entries()){
-   $('status').textContent=`Contrôle ${i+1}/${TABLES.length}`;
+  try{for(const [i,table] of tables.entries()){
+   $('status').textContent=`Contrôle ${i+1}/${tables.length}`;
    let r;try{r=classify(table,await grist.docApi.fetchTable(table),email);}catch(e){r=classifyError(e);}
    counts[r.state]++;add(table,r);
-  }}finally{running=false;$('run').disabled=false;$('identity').disabled=false;$('confirm').disabled=false; $('status').textContent=Object.entries(counts).map(([k,v])=>`${k} : ${v}`).join(' · ');}
- });
+  }
+  const c=sourceCheck(source,email);$('source-status').textContent=`Source onRecords (hors compteurs) : ${c.state} — ${c.detail}`;
+  }finally{running=false;for(const id of ['run','run-consult','identity','confirm'])$(id).disabled=false; $('status').textContent=Object.entries(counts).map(([k,v])=>`${k} : ${v}`).join(' · ');}
+ }
+ $('run').addEventListener('click',()=>run(TABLES));
+ $('run-consult').addEventListener('click',()=>run(['SIGMA_V2_CONSULTATIONS_TEST']));
 });
